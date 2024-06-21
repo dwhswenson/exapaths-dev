@@ -81,18 +81,18 @@ def run_single_task(message):
         ReceiptHandle=message['ReceiptHandle'],
     )
 
-   _logger.info("Running the task")
-   task_result = task.run_rask()
+    _logger.info("Running the task")
+    task_result = task.run_rask()
 
-   # pass results to the result queue
-   _logger.info("Passing results to the result queue")
-   result_msg = task.result_message(task_result)
-   if result_msg:
-       resp = sqs.send_message(
-           QueueUrl=resultq_url,
-           MessageBody=json.dumps(result_msg),
-           MessageGroupId=msg['result_db'],
-       )
+    # pass results to the result queue
+    _logger.info("Passing results to the result queue")
+    result_msg = task.result_message(task_result)
+    if result_msg:
+        resp = sqs.send_message(
+            QueueUrl=resultq_url,
+            MessageBody=json.dumps(result_msg),
+            MessageGroupId=msg['result_db'],
+        )
 
 # this should become obsolete very soon
 def _old_get_info():

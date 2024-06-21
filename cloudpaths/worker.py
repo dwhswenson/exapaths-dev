@@ -3,6 +3,10 @@ import os
 import json
 from cloudpaths.lamba_utils import load_config
 
+import logging
+
+_logger = logging.getLogger(__name__)
+
 TASK_TYPE_DISPATCH = {
     "LAUNCH": LaunchTask,
     "TEST_LAUNCH": TestLaunchTask,
@@ -55,17 +59,33 @@ class TestCycleLaunchTask(LaunchTask):
     def result_message(self, result):
         ...
 
+def run_single_task(message):
+    msg = json.loads(message['Body'])
+    task_type = TASK_TYPE_DISPATCH[msg['TaskType']]
+    cluster = msg['Cluster']
+    cluster_conf = msg['Config']['clusters'][cluster]
 
-def run_single_task(msg):
-    task_type = TASK_TYPE_DISPATCH[msg['TASK_TYPE']]
+    taskq_url = os.environ.get("CLOUDPATHS_TASK_QUEUE")
+    assert taskq_url == cluster_conf['task_queue']['url']
+
+    resultq_url = cluster_conf['result_queue']['url']
+
     task = task_type(msg)
 
+    _logger.info("Claiming a task")
+    _logger.debug(f"{msg=}\n{cluster_conf=}")
     task.claim_task()
     sqs.delete_message(
-        MessageId=msg["MessageId"],
-        ReceiptHandle=msg['ReceiptHandle'],
+        QueueUrl=taskq_url,
+        MessageId=message["MessageId"],
+        ReceiptHandle=message['ReceiptHandle'],
     )
+
+   _logger.info("Running the task")
    task_result = task.run_rask()
+
+   # pass results to the result queue
+   _logger.info("Passing results to the result queue")
    result_msg = task.result_message(task_result)
    if result_msg:
        resp = sqs.send_message(
@@ -74,8 +94,8 @@ def run_single_task(msg):
            MessageGroupId=msg['result_db'],
        )
 
-
-def worker_main_loop():
+# this should become obsolete very soon
+def _old_get_info():
     # get the task queue so we can start polling
     cluster = os.environ.get("CLOUDPATHS_CLUSTER")
     bucket = os.environ.get("CLOUDPATHS_BUCKET")
@@ -91,6 +111,12 @@ def worker_main_loop():
     sleep_time = task_queue_config['sleep_between_attempts']
     taskq_url = task_queue_config['url']
     resultq_url = cluster_config['result_queue']['url']
+
+
+def worker_main_loop(terminal_on_exit=True):
+    taskq_url = os.environ.get("CLOUDPATHS_TASK_QUEUE")
+    if not taskq:
+        ... # TODO: raise error and exit
 
     load_attempts = 1
     sqs = boto3.client('sqs')
@@ -109,10 +135,16 @@ def worker_main_loop():
             continue
 
         if len(messages) > 1:
-            # log warning, move on (process first; other should return to
-            # queue # TODO
+            # log warning, move on (process first message; others should
+            # return to queue) # TODO
             ...
 
         run_single_task(messages[0])
 
-    # TODO: shut self down when we exit loop
+    if terminate_on_exit:
+        ...  # TODO: shut self down when we exit loop
+
+if __name__ == "__main__":
+    # TODO debug here; otherwise logging.INFO and do terminate on exit
+    logging.basicConfig(level=logging.DEBUG)
+    worker_main_loop(terminate_on_exit=False)

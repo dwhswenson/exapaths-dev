@@ -130,7 +130,7 @@ def worker_main_loop(terminate_on_exit=True):
             QueueUrl=taskq_url,
             MaxNumberOfMessages=1,
             VisibilityTimeout=60,
-            WaitTimeSeconds=120,
+            WaitTimeSeconds=0,
         )
         messages = resp.get("Messages")
 

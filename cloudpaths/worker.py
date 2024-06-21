@@ -116,8 +116,12 @@ def _old_get_info():
 
 def worker_main_loop(terminate_on_exit=True):
     taskq_url = os.environ.get("CLOUDPATHS_TASK_QUEUE")
-    if not taskq_url:
+    max_attempts = int(os.environ.get("CLOUDPATHS_ATTEMPTS"))
+    sleep_time = float(os.environ.get("CLOUDPATHS_WAIT"))
+
+    if not (taskq_url and max_attempts and sleep_time):
         ... # TODO: raise error and exit
+        # TODO: maybe set defaults for max_attempts/sleep_time?
 
     load_attempts = 1
     sqs = boto3.client('sqs')

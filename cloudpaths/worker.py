@@ -1,6 +1,7 @@
 import boto3
 import os
 import json
+import time
 from cloudpaths.lambda_utils import load_config
 
 import logging
@@ -76,14 +77,14 @@ def run_single_task(message):
     _logger.info("Claiming a task")
     _logger.debug(f"{msg=}\n{cluster_conf=}")
     task.claim_task()
+    sqs = boto3.client('sqs')
     sqs.delete_message(
         QueueUrl=taskq_url,
-        MessageId=message["MessageId"],
         ReceiptHandle=message['ReceiptHandle'],
     )
 
     _logger.info("Running the task")
-    task_result = task.run_rask()
+    task_result = task.run_task()
 
     # pass results to the result queue
     _logger.info("Passing results to the result queue")
@@ -135,7 +136,7 @@ def worker_main_loop(terminate_on_exit=True):
         messages = resp.get("Messages")
 
         if not messages:
-            load_attemps += 1
+            load_attempts += 1
             time.sleep(sleep_time)
             continue
 

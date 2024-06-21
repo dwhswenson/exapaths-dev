@@ -1,18 +1,11 @@
 import boto3
 import os
 import json
-from cloudpaths.lamba_utils import load_config
+from cloudpaths.lambda_utils import load_config
 
 import logging
 
 _logger = logging.getLogger(__name__)
-
-TASK_TYPE_DISPATCH = {
-    "LAUNCH": LaunchTask,
-    "TEST_LAUNCH": TestLaunchTask,
-    "TEST_CYCLE": ...,
-    "TEST_MULTICYCLE": ...,
-}
 
 # TODO: convert tasks to plugins; that will make this easier
 class SingleTask:
@@ -58,6 +51,14 @@ class TestCycleLaunchTask(LaunchTask):
 
     def result_message(self, result):
         ...
+
+TASK_TYPE_DISPATCH = {
+    "LAUNCH": LaunchTask,
+    "TEST_LAUNCH": TestLaunchTask,
+    "TEST_CYCLE": ...,
+    "TEST_MULTICYCLE": ...,
+}
+
 
 def run_single_task(message):
     msg = json.loads(message['Body'])
@@ -113,9 +114,9 @@ def _old_get_info():
     resultq_url = cluster_config['result_queue']['url']
 
 
-def worker_main_loop(terminal_on_exit=True):
+def worker_main_loop(terminate_on_exit=True):
     taskq_url = os.environ.get("CLOUDPATHS_TASK_QUEUE")
-    if not taskq:
+    if not taskq_url:
         ... # TODO: raise error and exit
 
     load_attempts = 1

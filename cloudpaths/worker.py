@@ -19,7 +19,7 @@ class SingleTask:
     def run_task(self, task_id):
         ...
 
-    def result_message(self, result):
+    def result_message(self, task_id, result):
         return dict(**result, **self.message)
 
 
@@ -37,6 +37,10 @@ class TestLaunchTask(LaunchTask):
 
     def run_task(self, task_id):
         print("Would have created tasks for test_launch.db")
+
+    def result_message(self, task_id, result):
+        print("No return from result_message means we don't send to result "
+              "queue")
 
 
 
@@ -109,7 +113,6 @@ def run_single_task(message):
     _logger.info(f"Running task '{task_id}'")
     task_result = task.run_task(task_id)
 
-    # pass results to the result queue
     _logger.info("Passing results to the result queue")
     result_msg = task.result_message(task_id, task_result)
     if result_msg:
@@ -152,6 +155,7 @@ def worker_main_loop(terminate_on_exit=True):
             ...
 
         run_single_task(messages[0])
+        load_attempts = 1
 
     _logger.info("Exiting main worker loop")
     if terminate_on_exit:

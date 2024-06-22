@@ -20,7 +20,8 @@ class SingleTask:
         ...
 
     def result_message(self, task_id, result):
-        return dict(**result, **self.message)
+        return {'inputs': self.message,
+                'results': result}
 
 
 class LaunchTask(SingleTask):
@@ -123,7 +124,7 @@ def run_single_task(message):
         resp = sqs.send_message(
             QueueUrl=resultq_url,
             MessageBody=json.dumps(result_msg),
-            MessageGroupId=msg['result_db'],
+            MessageGroupId=result_msg['inputs']['Details']['result_db'],
         )
 
 

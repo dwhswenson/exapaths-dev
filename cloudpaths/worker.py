@@ -20,7 +20,7 @@ class SingleTask:
         ...
 
     def result_message(self, result):
-        ...
+        return dict(**result, **self.message)
 
 
 class LaunchTask(SingleTask):
@@ -30,38 +30,60 @@ class LaunchTask(SingleTask):
     def run_task(self):
         ... # TODO
 
-    def result_message(self, result):
-        ... # TODO
-
 
 class TestLaunchTask(LaunchTask):
     def claim_task(self):
         return None
 
     def run_task(self):
-        print("Would have created test_launch.db")
-        ...  # TODO: log that this has run successfully
-
-    def result_message(self, result):
-        return None
+        print("Would have created tasks for test_launch.db")
 
 
 class TestCycleLaunchTask(LaunchTask):
     def run_task(self):
-        ...
+        return {
+            "ResultType": "ADD_TASKS",
+            "ResultData": {
+                "Tasks": [
+                    {
+                        "TaskId": "task-foo",
+                        "Dependencies": []
+                    },
+                ]
+            }
+        }
 
-    def result_message(self, result):
-        ...
+class TestCycleWithDependencies(LaunchTask):
+    ...
+
+class TestCycleWithMultipleUnblocked(LaunchTask):
+    ...
+
+class _TestTask(SingleTask):
+    # make sure this includes a sleep parameter
+    ...
+
+class TestSuccessTask(_TestTask):
+    # add success/fail information here
+    ...
+
+class TestFailureTask(_TestTask):
+    ...
+
 
 TASK_TYPE_DISPATCH = {
     "LAUNCH": LaunchTask,
     "TEST_LAUNCH": TestLaunchTask,
-    "TEST_CYCLE": ...,
-    "TEST_MULTICYCLE": ...,
+    "TEST_LAUNCH_CYCLE": TestCycleLaunchTask,
+    "TEST_LAUNCH_DEPS": ...,
+    "TEST_LAUNCH_MULTIUNBLOCK": ...,
+    "TEST_TASK_SUCCESS": ...,
+    "TEST_TASK_FAILURE": ...,
 }
 
 
 def run_single_task(message):
+    _logger.info(f"Running task from message ID {message['MessageId']}")
     msg = json.loads(message['Body'])
     task_type = TASK_TYPE_DISPATCH[msg['TaskType']]
     cluster = msg['Cluster']
@@ -88,7 +110,7 @@ def run_single_task(message):
 
     # pass results to the result queue
     _logger.info("Passing results to the result queue")
-    result_msg = task.result_message(task_result)
+    result_msg = task.result_message(task_id, task_result)
     if result_msg:
         resp = sqs.send_message(
             QueueUrl=resultq_url,
@@ -126,7 +148,8 @@ def worker_main_loop(terminate_on_exit=True):
 
     load_attempts = 1
     sqs = boto3.client('sqs')
-    while load_attempts < max_attempts:
+    while load_attempts <= max_attempts:
+        _logger.info("Looking for a task ({load_attempts}/{max_attempts})")
         resp = sqs.receive_message(
             QueueUrl=taskq_url,
             MaxNumberOfMessages=1,
@@ -147,10 +170,20 @@ def worker_main_loop(terminate_on_exit=True):
 
         run_single_task(messages[0])
 
+    _logger.info("Exiting main worker loop")
     if terminate_on_exit:
         ...  # TODO: shut self down when we exit loop
+    else:
+        _logger.info("Not terminating this instance")
+
+
+def start(self):
+    # as used on a remote, with terminate_on_exit=True
+    logging.basicConfig(level=logging.INFO)
+    worker_main_loop(terminate_on_exit=True)
+
 
 if __name__ == "__main__":
-    # TODO debug here; otherwise logging.INFO and do terminate on exit
-    logging.basicConfig(level=logging.DEBUG)
+    # as used in debug testing
+    logging.basicConfig(level=logging.INFO)
     worker_main_loop(terminate_on_exit=False)

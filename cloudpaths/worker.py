@@ -16,7 +16,7 @@ class SingleTask:
     def claim_task(self):
         ...
 
-    def run_task(self):
+    def run_task(self, task_id):
         ...
 
     def result_message(self, result):
@@ -35,8 +35,9 @@ class TestLaunchTask(LaunchTask):
     def claim_task(self):
         return None
 
-    def run_task(self):
+    def run_task(self, task_id):
         print("Would have created tasks for test_launch.db")
+
 
 
 class TestCycleLaunchTask(LaunchTask):
@@ -98,15 +99,15 @@ def run_single_task(message):
 
     _logger.info("Claiming a task")
     _logger.debug(f"{msg=}\n{cluster_conf=}")
-    task.claim_task()
+    task_id = task.claim_task()
     sqs = boto3.client('sqs')
     sqs.delete_message(
         QueueUrl=taskq_url,
         ReceiptHandle=message['ReceiptHandle'],
     )
 
-    _logger.info("Running the task")
-    task_result = task.run_task()
+    _logger.info(f"Running task '{task_id}'")
+    task_result = task.run_task(task_id)
 
     # pass results to the result queue
     _logger.info("Passing results to the result queue")
@@ -117,24 +118,6 @@ def run_single_task(message):
             MessageBody=json.dumps(result_msg),
             MessageGroupId=msg['result_db'],
         )
-
-# this should become obsolete very soon
-def _old_get_info():
-    # get the task queue so we can start polling
-    cluster = os.environ.get("CLOUDPATHS_CLUSTER")
-    bucket = os.environ.get("CLOUDPATHS_BUCKET")
-    prefix = os.environ.get("CLOUDPATHS_PREFIX")
-    if not cluster or not bucket or not PREFIX:
-        ... # TODO: raise error and exit
-
-    # get stuff we need from config
-    config = load_config(bucket, prefix)
-    cluster_config = config['clusters'][cluster]
-    task_queue_config = cluster_config['task_queue']
-    max_attempts = task_queue_config['load_attempts_before_shutdown']
-    sleep_time = task_queue_config['sleep_between_attempts']
-    taskq_url = task_queue_config['url']
-    resultq_url = cluster_config['result_queue']['url']
 
 
 def worker_main_loop(terminate_on_exit=True):
@@ -149,7 +132,7 @@ def worker_main_loop(terminate_on_exit=True):
     load_attempts = 1
     sqs = boto3.client('sqs')
     while load_attempts <= max_attempts:
-        _logger.info("Looking for a task ({load_attempts}/{max_attempts})")
+        _logger.info(f"Looking for a task ({load_attempts}/{max_attempts})")
         resp = sqs.receive_message(
             QueueUrl=taskq_url,
             MaxNumberOfMessages=1,

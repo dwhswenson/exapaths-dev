@@ -45,13 +45,17 @@ class TestLaunchTask(LaunchTask):
 
 
 class TestCycleLaunchTask(LaunchTask):
-    def run_task(self):
+    def claim_task(self):
+        return "launch-task-foo"
+
+    def run_task(self, task_id):
+        print(f"Creating a task with id '{task_id}' and no dependencies")
         return {
             "ResultType": "ADD_TASKS",
             "ResultData": {
                 "Tasks": [
                     {
-                        "TaskId": "task-foo",
+                        "TaskId": task_id,
                         "Dependencies": []
                     },
                 ]

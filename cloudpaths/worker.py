@@ -121,10 +121,13 @@ def run_single_task(message):
     _logger.info("Passing results to the result queue")
     result_msg = task.result_message(task_id, task_result)
     if result_msg:
+        bucket = result_msg['inputs']['Config']['bucket']
+        prefix = result_msg['inputs']['Config']['prefix']
+        result_db = result_msg['inputs']['Details']['result_db']
         resp = sqs.send_message(
             QueueUrl=resultq_url,
             MessageBody=json.dumps(result_msg),
-            MessageGroupId=result_msg['inputs']['Details']['result_db'],
+            MessageGroupId=f"{bucket}::{prefix}::{result_db}",
         )
 
 
@@ -151,7 +154,8 @@ def worker_main_loop(terminate_on_exit=True):
 
         if not messages:
             load_attempts += 1
-            time.sleep(sleep_time)
+            if load_attempts < max_attempts:
+                time.sleep(sleep_time)
             continue
 
         if len(messages) > 1:

@@ -102,7 +102,7 @@ def run_single_task(message):
     taskq_url = os.environ.get("CLOUDPATHS_TASK_QUEUE")
     assert taskq_url == cluster_conf['task_queue']['url']
 
-    resultq_url = cluster_conf['result_queue']['url']
+    resultq_url = msg['Config']['result_queue']['url']
 
     task = task_type(msg)
 

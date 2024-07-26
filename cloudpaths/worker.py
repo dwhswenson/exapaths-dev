@@ -2,34 +2,63 @@ import boto3
 import os
 import json
 import time
-from cloudpaths.lambda_utils import load_config
+import pathlib
 
 import logging
 
 _logger = logging.getLogger(__name__)
 
+
 # TODO: convert tasks to plugins; that will make this easier
 class SingleTask:
-    def __init__(self, message):
-        self.message = message
-
-    def claim_task(self):
-        ...
+    def __init__(self, context):
+        self.context = context
 
     def run_task(self, task_id):
-        ...
-
-    def result_message(self, task_id, result):
-        return {'inputs': self.message,
-                'results': result}
+        raise NotImplementedError()
 
 
 class LaunchTask(SingleTask):
-    def claim_task(self):
-        ... # TODO: where/home?;
+    """A task to create a database of other tasks to accomplish.
+    """
+    @property
+    def config(self):
+        return self.message['Config']
 
-    def run_task(self):
-        ... # TODO
+    def run_task(self, object_db, executor):
+        bucket = self.config["bucket"]
+        prefix = self.config["prefix"]
+        launch_db = self.message['Details']['launch_db']
+        run_path = pathlib.Path(self.message['Details']['run_path'])
+        task_db = tasks_dir / "taskdb.db"
+        print(f"{bucket=}")
+        print(f"{prefix=}")
+        print(f"{launch_db=}")
+        print(f"{run_path=}")
+        print(f"{task_db=}")
+        storage_handler = S3StorageHandler(bucket, run_path)
+        with s3_localfile(bucket, launch_db) as launch_file:
+            storage = Storage(launch_file, mode='r')
+            scheme = storage.schemes[0]
+            nsteps = storage.tags['nsteps']
+            init_conds = storage.tags['initial_conditions']
+            task_graph = create_task_graph(scheme, nsteps, object_db)
+
+        executor.submit_graph(task_graph)
+
+
+class PathMoveTask(SingleTask):
+    """A task to perform an OPS path move.
+    """
+    def __init__(self, taskid):
+        self.taskid = taskid
+
+    def run_task(self, object_db, executor):
+        with object_db.load_task(self.taskid) as mover:
+            inp_ens = mover = input_ensembles
+            with object_db.load_sample_set(inp_ens) as active:
+                change = mover.mover(active)
+                object_db.save_change(self.taskid, change)
 
 
 class TestLaunchTask(LaunchTask):
@@ -38,11 +67,6 @@ class TestLaunchTask(LaunchTask):
 
     def run_task(self, task_id):
         print("Would have created tasks for test_launch.db")
-
-    def result_message(self, task_id, result):
-        print("No return from result_message means we don't send to result "
-              "queue")
-
 
 
 class TestCycleLaunchTask(LaunchTask):
@@ -57,17 +81,21 @@ class TestCycleLaunchTask(LaunchTask):
                 "Tasks": [
                     {
                         "TaskId": task_id,
-                        "Dependencies": []
+                        "Dependencies": [],
+                        "TaskType": "TEST_TASK_SUCCESS",
                     },
                 ]
             }
         }
 
+
 class TestCycleWithDependencies(LaunchTask):
     ...
 
+
 class TestCycleWithMultipleUnblocked(LaunchTask):
     ...
+
 
 class _TestTask(SingleTask):
     # make sure this includes a sleep parameter
@@ -89,6 +117,7 @@ TASK_TYPE_DISPATCH = {
     "TEST_LAUNCH_MULTIUNBLOCK": ...,
     "TEST_TASK_SUCCESS": ...,
     "TEST_TASK_FAILURE": ...,
+    "default": ...,
 }
 
 
@@ -119,8 +148,11 @@ def run_single_task(message):
     task_result = task.run_task(task_id)
 
     _logger.info("Passing results to the result queue")
-    result_msg = task.result_message(task_id, task_result)
-    if result_msg:
+    if task_result is not None:
+        result_msg = {
+            'inputs': msg,
+            'results': task_result,
+        }
         bucket = result_msg['inputs']['Config']['bucket']
         prefix = result_msg['inputs']['Config']['prefix']
         result_db = result_msg['inputs']['Details']['result_db']

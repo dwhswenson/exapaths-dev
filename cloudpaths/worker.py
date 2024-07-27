@@ -3,12 +3,16 @@ import os
 import json
 import time
 import pathlib
+import networkx as nx
 
 import logging
 
 from .aws_utils import s3_localfile
 from .create_task_graph import create_task_graph
 from .run_task import SimStoreZipStorage
+import openpathsampling as paths
+from openpathsampling.experimental.storage import Storage, monkey_patch_all
+paths = monkey_patch_all(paths)
 
 _logger = logging.getLogger(__name__)
 
@@ -90,7 +94,8 @@ class LaunchTask(SingleTask):
         with s3_localfile(bucket, launch_db) as launch_file:
             storage = Storage(launch_file, mode='r')
             scheme = storage.schemes[0]
-            nsteps = storage.tags['nsteps']
+            metadata = storage.tags['cloudpaths_metadata']
+            nsteps = metadata['nsteps']
             init_conds = storage.tags['initial_conditions']
             task_graph = create_task_graph(scheme, nsteps, object_db)
 

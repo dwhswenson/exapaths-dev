@@ -37,9 +37,10 @@ def SimStoreZipFile(storage_handler, storage_path, mode):
 
 
 class SimStoreZipStorage:
-    """This is an object storage model where all objects are stored in
-    indivual SimStore zip/db files except the final result storage, which is
-    standard SimStore db.
+    """This is an object storage model where all objects (each active
+    sample, each change) are stored in indivual SimStore zip/db files. Then
+    the changes can be collected into stnadard SimStore db as the final
+    result storage.
     """
     def __init__(self, storage_handler):
         self.storage_handler = storage_handler

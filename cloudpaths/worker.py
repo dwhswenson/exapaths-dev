@@ -16,11 +16,9 @@ class SingleTask:
     def __init__(self, context):
         self.context = context
 
-    def claim_task(self, task_id):
-        pass
-
     def run_task(self, task_id):
         raise NotImplementedError()
+
 
 
 class LaunchTask(SingleTask):
@@ -30,7 +28,7 @@ class LaunchTask(SingleTask):
     def config(self):
         return self.message['Config']
 
-    def run_task(self, object_db, executor):
+    def run_task(self, object_db):
         print(self.message)
         bucket = self.config["bucket"]
         prefix = self.config["prefix"]
@@ -50,7 +48,26 @@ class LaunchTask(SingleTask):
             init_conds = storage.tags['initial_conditions']
             task_graph = create_task_graph(scheme, nsteps, object_db)
 
-        executor.submit_graph(task_graph)
+        # this is ridiculous; should be something in nx for it
+        task_to_deps = {node: [] for node in task_graph.nodes}
+        for from_node, to_node in task_graph.edges:
+            task_to_deps[to_node].append(from_node)
+
+        task_message = {
+            "ResultType": "ADD_TASKS",
+            "ResultData": {
+                "Tasks": [
+                    {
+                        "TaskId": task_id,
+                        "Dependencies": tasks_to_deps[task_id],
+                        "TaskType": "STORED_TASK",
+                    }
+                    for task_id in reversed(nx.topological_sort(task_graph))
+                ]
+            }
+        }
+        print(task_message)
+        return task_message
 
 
 class PathMoveTask(SingleTask):
@@ -59,12 +76,19 @@ class PathMoveTask(SingleTask):
     def __init__(self, taskid):
         self.taskid = taskid
 
-    def run_task(self, object_db, executor):
+    def run_task(self, object_db):
         with object_db.load_task(self.taskid) as mover:
             inp_ens = mover = input_ensembles
             with object_db.load_sample_set(inp_ens) as active:
                 change = mover.mover(active)
                 object_db.save_change(self.taskid, change)
+
+class StorageTask(SingleTask):
+    def __init__(self, taskid):
+        self.taskid = taskid
+
+    def run_task(self, object_db ):
+        ...
 
 
 class TestLaunchTask(LaunchTask):

@@ -49,9 +49,8 @@ class LaunchTask(SingleTask):
             task_graph = create_task_graph(scheme, nsteps, object_db)
 
         # this is ridiculous; should be something in nx for it
-        task_to_deps = {node: [] for node in task_graph.nodes}
-        for from_node, to_node in task_graph.edges:
-            task_to_deps[to_node].append(from_node)
+        task_to_deps = {node: list(task_graph.predecessors(node))
+                        for node in task_graph.nodes}
 
         task_message = {
             "ResultType": "ADD_TASKS",
@@ -59,10 +58,10 @@ class LaunchTask(SingleTask):
                 "Tasks": [
                     {
                         "TaskId": task_id,
-                        "Dependencies": tasks_to_deps[task_id],
+                        "Dependencies": task_to_deps[task_id],
                         "TaskType": "STORED_TASK",
                     }
-                    for task_id in reversed(nx.topological_sort(task_graph))
+                    for task_id in nx.topological_sort(task_graph)
                 ]
             }
         }

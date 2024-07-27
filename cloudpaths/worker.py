@@ -6,6 +6,8 @@ import pathlib
 
 import logging
 
+from .aws_utils import s3_localfile
+
 _logger = logging.getLogger(__name__)
 
 
@@ -26,6 +28,7 @@ class LaunchTask(SingleTask):
         return self.message['Config']
 
     def run_task(self, object_db, executor):
+        print(self.message)
         bucket = self.config["bucket"]
         prefix = self.config["prefix"]
         launch_db = self.message['Details']['launch_db']

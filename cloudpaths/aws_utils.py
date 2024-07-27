@@ -10,6 +10,8 @@ import tempfile
 def load_config(bucket_name, prefix=""):
     s3 = boto3.client('s3')
     config = pathlib.Path(prefix) / "cloudpaths-config.json"
+    print(f"Loading config. Bucket: {bucket_name} "
+          f"Config file: {str(config)}")
     resp = s3.get_object(Bucket=bucket_name, Key=str(config))
     as_utf8 = resp['Body'].read().decode('utf-8')
     as_json = json.loads(as_utf8)

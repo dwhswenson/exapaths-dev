@@ -12,6 +12,47 @@ from .run_task import SimStoreZipStorage
 
 _logger = logging.getLogger(__name__)
 
+from .move_to_ops.storage_handlers import StorageHandler
+import pathlib
+import boto3
+class S3StorageHandler(StorageHandler):
+    def __init__(self, bucket, prefix=""):
+        self.bucket = bucket
+        self.prefix = pathlib.Path(prefix)
+        self.s3 = boto3.client('s3')
+
+    def _key(self, storage_label):
+        return str(self.prefix / storage_label)
+
+    def store(self, storage_label, source_path):
+        self.s3.upload_file(Filename=str(source_path),
+                            Bucket=self.bucket,
+                            Key=self._key(storage_label))
+
+    def load(self, storage_label, target_path):
+        self.s3.download_file(Bucket=self.bucket,
+                              Key=self._key(storage_label),
+                              Filename=target_path)
+
+    def delete(self, storage_label):
+        self.s3.delete_object(Bucket=self.bucket,
+                              Key=self._key(storage_label))
+
+    def __contains__(self, storage_label):
+        try:
+            resp = self.s3.head_object(Bucket=self.bucket,
+                                       Key=self._key(storage_label))
+        except ClientError:
+            # NOTE: this can be because of permissions problems, too
+            return False
+        else:
+            return True
+
+    def list_directory(self, storage_label):
+        s3 = boto3.resource('s3')
+        bucket = s3.Bucket(self.bucket)
+        yield from bucket.objects.filter(Prefix=self._key(storage_label))
+
 
 # TODO: convert tasks to plugins; that will make this easier
 class SingleTask:

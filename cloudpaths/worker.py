@@ -35,7 +35,7 @@ class LaunchTask(SingleTask):
         bucket = self.config["bucket"]
         prefix = self.config["prefix"]
         launch_db = self.message['Details']['launch_db']
-        run_path = pathlib.Path(self.message['Details']['run_path'])
+        run_path = pathlib.Path(self.message['Details']['working_path'])
         task_db = tasks_dir / "taskdb.db"
         print(f"{bucket=}")
         print(f"{prefix=}")

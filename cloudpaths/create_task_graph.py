@@ -2,7 +2,7 @@
 Run this as a lambda when we need to create a new task graph
 """
 import openpathsampling as paths
-from openpathsampling.pathsimulators.preplanned import (
+from cloudpaths.move_to_ops.preplanned import (
     MoverNode, preplan_pathsampling
 )
 import networkx as nx
@@ -42,7 +42,7 @@ if __name__ == "__main__":
     nsteps = int(sys.argv[2])
     from openpathsampling.experimental.storage import Storage, monkey_patch_all
     from cloudpaths.run_task import SimStoreZipStorage
-    from openpathsampling.utils.storage_handlers import LocalFileStorageHandler
+    from cloudpaths.move_to_ops.storage_handlers import LocalFileStorageHandler
     import exorcist
     paths = monkey_patch_all(paths)
     st = Storage(opsfile, mode='r')

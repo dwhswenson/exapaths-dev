@@ -16,6 +16,9 @@ class SingleTask:
     def __init__(self, context):
         self.context = context
 
+    def claim_task(self):
+        ...
+
     def run_task(self, task_id):
         raise NotImplementedError()
 

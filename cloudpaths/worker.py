@@ -13,15 +13,14 @@ _logger = logging.getLogger(__name__)
 
 # TODO: convert tasks to plugins; that will make this easier
 class SingleTask:
-    def __init__(self, context):
-        self.context = context
+    def __init__(self, message):
+        self.message = message
 
     def claim_task(self):
         ...
 
     def run_task(self, task_id):
         raise NotImplementedError()
-
 
 
 class LaunchTask(SingleTask):

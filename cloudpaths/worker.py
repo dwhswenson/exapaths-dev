@@ -7,6 +7,8 @@ import pathlib
 import logging
 
 from .aws_utils import s3_localfile
+from .create_task_graph import create_task_graph
+from .run_task import SimStoreZipStorage
 
 _logger = logging.getLogger(__name__)
 
@@ -30,19 +32,20 @@ class LaunchTask(SingleTask):
     def config(self):
         return self.message['Config']
 
-    def run_task(self, object_db):
+    def run_task(self, task_id):
         print(self.message)
         bucket = self.config["bucket"]
         prefix = self.config["prefix"]
         launch_db = self.message['Details']['launch_db']
         run_path = pathlib.Path(self.message['Details']['working_path'])
-        task_db = tasks_dir / "taskdb.db"
+        task_db = run_path / "tasks" / "taskdb.db"
         print(f"{bucket=}")
         print(f"{prefix=}")
         print(f"{launch_db=}")
         print(f"{run_path=}")
         print(f"{task_db=}")
         storage_handler = S3StorageHandler(bucket, run_path)
+        object_db = SimStoreZipStorage(storage_handler)
         with s3_localfile(bucket, launch_db) as launch_file:
             storage = Storage(launch_file, mode='r')
             scheme = storage.schemes[0]
@@ -50,7 +53,6 @@ class LaunchTask(SingleTask):
             init_conds = storage.tags['initial_conditions']
             task_graph = create_task_graph(scheme, nsteps, object_db)
 
-        # this is ridiculous; should be something in nx for it
         task_to_deps = {node: list(task_graph.predecessors(node))
                         for node in task_graph.nodes}
 
@@ -83,6 +85,7 @@ class PathMoveTask(SingleTask):
             with object_db.load_sample_set(inp_ens) as active:
                 change = mover.mover(active)
                 object_db.save_change(self.taskid, change)
+
 
 class StorageTask(SingleTask):
     def __init__(self, taskid):

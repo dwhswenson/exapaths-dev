@@ -297,7 +297,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--terminate", default=True)
     opts = parser.parse_args()
-    logging.basicConfig(stream=sys.stdout, level=logging.INFO)
+    # TODO: figure out who is setting basicConfig on import
+    logging.basicConfig(stream=sys.stdout, level=logging.INFO, force=True)
     try:
         worker_main_loop()
     finally:

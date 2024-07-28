@@ -1,5 +1,6 @@
 import boto3
 import os
+import sys
 import json
 import time
 import pathlib
@@ -206,6 +207,7 @@ TASK_TYPE_DISPATCH = {
 def run_single_task(message):
     _logger.info(f"Running task from message ID {message['MessageId']}")
     msg = json.loads(message['Body'])
+    print(msg)
     task_type = TASK_TYPE_DISPATCH[msg['TaskType']]
     cluster = msg['Cluster']
     cluster_conf = msg['Config']['clusters'][cluster]

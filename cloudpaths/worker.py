@@ -99,7 +99,7 @@ class LaunchTask(SingleTask):
             init_conds = storage.tags['initial_conditions']
             print("Building the task graph....")
             task_graph = create_task_graph(scheme, nsteps, object_db)
-            object_db.
+            # object_db. # TODO: save current state
 
         task_to_deps = {node: list(task_graph.predecessors(node))
                         for node in task_graph.nodes}
@@ -285,7 +285,7 @@ def worker_main_loop(terminate_on_exit=True):
 
 def start(self):
     # as used on a remote, with terminate_on_exit=True
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(stream=sys.stdout, level=logging.INFO)
     worker_main_loop(terminate_on_exit=True)
 
 
@@ -293,17 +293,17 @@ if __name__ == "__main__":
     # as used in debug testing
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_options("--terminate", default=True)
+    parser.add_argument("--terminate", default=True)
     opts = parser.parse_args()
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(stream=sys.stdout, level=logging.INFO)
     try:
-        worker_main_loop(terminate_on_exit=opts.terminate)
+        worker_main_loop()
     finally:
-        if terminate_on_exit:
+        if opts.terminate:
             instance_id = os.environ.get("AWS_INSTANCE_ID")
             _logger.info(f"Terminating this instance ({instance_id})")
             autoscaling = boto3.client('autoscaling')
-            autoscaling.terminate_instance_in_autoscaling_group(
+            autoscaling.terminate_instance_in_auto_scaling_group(
                 InstanceId=instance_id,
                 ShouldDecrementDesiredCapacity=True,
             )

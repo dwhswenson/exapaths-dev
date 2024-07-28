@@ -97,7 +97,9 @@ class LaunchTask(SingleTask):
             metadata = storage.tags['cloudpaths_metadata']
             nsteps = metadata['nsteps']
             init_conds = storage.tags['initial_conditions']
+            print("Building the task graph....")
             task_graph = create_task_graph(scheme, nsteps, object_db)
+            object_db.
 
         task_to_deps = {node: list(task_graph.predecessors(node))
                         for node in task_graph.nodes}
@@ -279,10 +281,6 @@ def worker_main_loop(terminate_on_exit=True):
         load_attempts = 1
 
     _logger.info("Exiting main worker loop")
-    if terminate_on_exit:
-        ...  # TODO: shut self down when we exit loop
-    else:
-        _logger.info("Not terminating this instance")
 
 
 def start(self):
@@ -293,5 +291,22 @@ def start(self):
 
 if __name__ == "__main__":
     # as used in debug testing
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_options("--terminate", default=True)
+    opts = parser.parse_args()
     logging.basicConfig(level=logging.INFO)
-    worker_main_loop(terminate_on_exit=False)
+    try:
+        worker_main_loop(terminate_on_exit=opts.terminate)
+    finally:
+        if terminate_on_exit:
+            instance_id = os.environ.get("AWS_INSTANCE_ID")
+            _logger.info(f"Terminating this instance ({instance_id})")
+            autoscaling = boto3.client('autoscaling')
+            autoscaling.terminate_instance_in_autoscaling_group(
+                InstanceId=instance_id,
+                ShouldDecrementDesiredCapacity=True,
+            )
+        else:
+            _logger.info("Not terminating this instance")
+

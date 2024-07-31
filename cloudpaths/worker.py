@@ -17,6 +17,10 @@ paths = monkey_patch_all(paths)
 
 _logger = logging.getLogger(__name__)
 
+class TerminateWithoutShutdown(Exception):
+    """Convert exceptions to this to prevent workers from shutting down
+    """
+
 from .move_to_ops.storage_handlers import StorageHandler
 import pathlib
 import boto3
@@ -119,7 +123,7 @@ class LaunchTask(SingleTask):
                     {
                         "TaskId": task_id,
                         "Dependencies": task_to_deps[task_id],
-                        "TaskType": task_graph[task_id]['obj'].TYPE,
+                        "TaskType": task_graph.nodes[task_id]['obj'].TYPE,
                     }
                     for task_id in nx.topological_sort(task_graph)
                 ]
@@ -296,6 +300,8 @@ def worker_main_loop(terminate_on_exit=True):
 
         run_single_task(messages[0])
         load_attempts = 1
+        # uncomment the next line for on-instance debugging
+        # raise TerminateWithoutShutdown()
 
     _logger.info("Exiting main worker loop")
 
@@ -314,10 +320,15 @@ if __name__ == "__main__":
     opts = parser.parse_args()
     # TODO: figure out who is setting basicConfig on import
     logging.basicConfig(stream=sys.stdout, level=logging.INFO, force=True)
+    ops_experimental = logging.getLogger('openpathsampling.experimental')
+    ops_experimental.setLevel(logging.WARNING)
+    terminate = opts.terminate
     try:
         worker_main_loop()
+    except TerminateWithoutShutdown:
+        terminate = False
     finally:
-        if opts.terminate:
+        if terminate:
             instance_id = os.environ.get("AWS_INSTANCE_ID")
             _logger.info(f"Terminating this instance ({instance_id})")
             autoscaling = boto3.client('autoscaling')

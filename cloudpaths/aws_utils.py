@@ -58,7 +58,6 @@ def s3_localfile(bucket, object_key):
             resp = s3.get_object(Bucket=bucket, Key=object_key)
         except s3.exceptions.NoSuchKey:
             print("File not found")
-            pass  # file does not yet exist; we don't need to read it
         else:
             # make a local copy of the file
             with open(dbfilename, mode='wb') as f:
@@ -67,6 +66,8 @@ def s3_localfile(bucket, object_key):
         try:
             yield dbfilename
         finally:
-            print(f"Uploading {dbfilename} to s3://{bucket}/{object_key}")
-            with open(dbfilename, mode='rb') as f:
-                s3.put_object(Bucket=bucket, Key=object_key, Body=f)
+            if dbfilename.exists():
+                print(f"Uploading {dbfilename} to "
+                      f"s3://{bucket}/{object_key}")
+                with open(dbfilename, mode='rb') as f:
+                    s3.put_object(Bucket=bucket, Key=object_key, Body=f)

@@ -21,6 +21,11 @@ from .move_to_ops.storage_handlers import StorageHandler
 import pathlib
 import boto3
 class S3StorageHandler(StorageHandler):
+    """Subclass of storage handler for S3 interactions.
+
+    StorageHandler abstracts out interactions with storage. This is the S3
+    implementation of that.
+    """
     def __init__(self, bucket, prefix=""):
         self.bucket = bucket
         self.prefix = pathlib.Path(prefix)
@@ -105,6 +110,8 @@ class LaunchTask(SingleTask):
         task_to_deps = {node: list(task_graph.predecessors(node))
                         for node in task_graph.nodes}
 
+        # TODO: we need to distinguish different task types; probably need
+        # something in the task object for that
         task_message = {
             "ResultType": "ADD_TASKS",
             "ResultData": {
@@ -112,7 +119,7 @@ class LaunchTask(SingleTask):
                     {
                         "TaskId": task_id,
                         "Dependencies": task_to_deps[task_id],
-                        "TaskType": "STORED_TASK",
+                        "TaskType": task_graph[task_id]['obj'].TYPE,
                     }
                     for task_id in nx.topological_sort(task_graph)
                 ]
@@ -130,7 +137,7 @@ class PathMoveTask(SingleTask):
 
     def run_task(self, object_db):
         with object_db.load_task(self.taskid) as mover:
-            inp_ens = mover = input_ensembles
+            inp_ens = mover.input_ensembles
             with object_db.load_sample_set(inp_ens) as active:
                 change = mover.mover(active)
                 object_db.save_change(self.taskid, change)
@@ -142,7 +149,6 @@ class StorageTask(SingleTask):
 
     def run_task(self, object_db ):
         ...
-
 
 class TestLaunchTask(LaunchTask):
     def claim_task(self):
@@ -200,11 +206,20 @@ TASK_TYPE_DISPATCH = {
     "TEST_LAUNCH_MULTIUNBLOCK": ...,
     "TEST_TASK_SUCCESS": ...,
     "TEST_TASK_FAILURE": ...,
+    "MoverTask": ...,
+    "StorageTask": ...,
     "default": ...,
 }
 
 
 def run_single_task(message):
+    """
+    Process a single task from the SQS queue.
+
+    This dispatches the task message to the correct runner, and returns the
+    task results to the result queue. This is primarily focused on SQS
+    integration in the Exapaths workflow.
+    """
     _logger.info(f"Running task from message ID {message['MessageId']}")
     msg = json.loads(message['Body'])
     print(msg)

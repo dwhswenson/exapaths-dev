@@ -8,6 +8,11 @@ import contextlib
 import tempfile
 
 def load_config(bucket_name, prefix=""):
+    """Load the exapaths configuration for the bucket/prefix.
+
+    This configuration includes information like URLs of different queues,
+    etc.
+    """
     s3 = boto3.client('s3')
     config = pathlib.Path(prefix) / "cloudpaths-config.json"
     print(f"Loading config. Bucket: {bucket_name} "
@@ -18,6 +23,8 @@ def load_config(bucket_name, prefix=""):
     return as_json
 
 def store_config(config):
+    """Store the exapaths configuration.
+    """
     bucket_name = config['bucket']
     prefix = config['prefix']
     s3 = boto3.client('s3')
@@ -27,6 +34,19 @@ def store_config(config):
 
 @contextlib.contextmanager
 def s3_localfile(bucket, object_key):
+    """Context manager to get a local file version of an S3 object.
+
+    If the S3 ``object_key`` does not exist, then we create it.
+
+    When the context manager terminates, we upload the updated file to S3.
+
+    Parameters
+    ----------
+    bucket: str
+        name of the S3 bucket
+    object_key: str
+        key for the object in the bucket
+    """
     # future: consider something like litestream for this? probably not
     # needed though... maybe for the main results? not for lambdas
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -34,9 +54,10 @@ def s3_localfile(bucket, object_key):
         dbfilename = tmpdir / pathlib.Path(object_key).name
         s3 = boto3.client('s3')
         try:
-            print(f"Loading remote file: {bucket=} {object_key=}")
+            print(f"Loading remote file: s3://{bucket}/{object_key}")
             resp = s3.get_object(Bucket=bucket, Key=object_key)
         except s3.exceptions.NoSuchKey:
+            print("File not found")
             pass  # file does not yet exist; we don't need to read it
         else:
             # make a local copy of the file
@@ -46,7 +67,6 @@ def s3_localfile(bucket, object_key):
         try:
             yield dbfilename
         finally:
+            print(f"Uploading {dbfilename} to s3://{bucket}/{object_key}")
             with open(dbfilename, mode='rb') as f:
                 s3.put_object(Bucket=bucket, Key=object_key, Body=f)
-
-

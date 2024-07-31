@@ -9,6 +9,14 @@ import networkx as nx
 
 
 def create_task_graph(scheme, nsteps, objectdb):
+    """
+    Save individual tasks to task storage; return task graph
+
+    This creates the task graph, saves a serialized representation of the
+    tasks to storage in a way that it can be reloaded later, and return a
+    networkx graph suitable for loading in Exorcist.
+    """
+    # plan the graph using preplan_pathsampling
     edges = preplan_pathsampling(scheme, nsteps)
 
     # preplan_pathsampling provides all information as edges between tasks
@@ -22,9 +30,12 @@ def create_task_graph(scheme, nsteps, objectdb):
                    if not isinstance(n1, str) and not isinstance(n2, str)]
 
     # create a networkx graph suitable for exorcist (string task names as
-    # nodes, we use MoverNode.uuid for task name)
+    # nodes, we use MoverNode.uuid for task name) -- we attach the node so
+    # that exapaths can use this to identify type of task to direct to
+    # different queues
     graph = nx.DiGraph()
-    graph.add_nodes_from(str(node.uuid) for node in nodes)
+    for node in nodes:
+        graph.add_node(str(node.uuid), obj=node)
     graph.add_edges_from(mover_edges)
 
     # serialize all tasks to disk
@@ -53,6 +64,7 @@ if __name__ == "__main__":
     objectdb = SimStoreZipStorage(LocalFileStorageHandler(root_dir))
     taskdb = exorcist.TaskStatusDB.from_filename(root_dir / "taskdb.db")
     task_graph = create_task_graph(scheme, nsteps, objectdb)
+
     # save task graph to exorcist database
     taskdb.add_task_network(task_graph, max_tries=3)
 

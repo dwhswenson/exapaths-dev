@@ -152,7 +152,8 @@ class SerialTaskRunner:
     def run_loop(self):
         ntasks = 1
         while (taskid := self.get_task()) is not None:
-            print(f"Running task : {taskid} (#{ntasks})")
+            task_type = self.taskdb.get_task_type(taskid)
+            print(f"Running task : {taskid} ({task_type}: #{ntasks})")
             self.run_task(taskid)
             # remaining here are the parts that happen in lambda
             self.objectdb.update_active_samples(taskid)
@@ -167,13 +168,13 @@ if __name__ == "__main__":
     import pathlib
     from openpathsampling.experimental.storage import Storage, monkey_patch_all
     from cloudpaths.move_to_ops.storage_handlers import LocalFileStorageHandler
-    import exorcist
+    from .taskdb import TaskStatusDB
     paths = monkey_patch_all(paths)
     basedir = pathlib.Path(sys.argv[1])
 
     handler = LocalFileStorageHandler(basedir)
     objectdb = SimStoreZipStorage(handler)
-    taskdb = exorcist.TaskStatusDB.from_filename(basedir / 'taskdb.db')
+    taskdb = TaskStatusDB.from_filename(basedir / 'taskdb.db')
 
     worker = SerialTaskRunner(objectdb, taskdb, simid=str(basedir))
     worker.run_loop()

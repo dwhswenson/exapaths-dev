@@ -54,7 +54,7 @@ if __name__ == "__main__":
     from openpathsampling.experimental.storage import Storage, monkey_patch_all
     from cloudpaths.run_task import SimStoreZipStorage
     from cloudpaths.move_to_ops.storage_handlers import LocalFileStorageHandler
-    import exorcist
+    from .taskdb import TaskStatusDB
     paths = monkey_patch_all(paths)
     st = Storage(opsfile, mode='r')
     scheme = st.schemes[0]
@@ -62,7 +62,7 @@ if __name__ == "__main__":
     root_dir = pathlib.Path("task_graph")
 
     objectdb = SimStoreZipStorage(LocalFileStorageHandler(root_dir))
-    taskdb = exorcist.TaskStatusDB.from_filename(root_dir / "taskdb.db")
+    taskdb = TaskStatusDB.from_filename(root_dir / "taskdb.db")
     task_graph = create_task_graph(scheme, nsteps, objectdb)
 
     # save task graph to exorcist database

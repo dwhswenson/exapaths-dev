@@ -318,10 +318,16 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--terminate", default=True)
     opts = parser.parse_args()
-    # TODO: figure out who is setting basicConfig on import
+
+    # TODO: figure out who is setting basicConfig on import (force=True
+    # fixes)
     logging.basicConfig(stream=sys.stdout, level=logging.INFO, force=True)
-    ops_experimental = logging.getLogger('openpathsampling.experimental')
-    ops_experimental.setLevel(logging.WARNING)
+    back_to_warning = ['openpathsampling.experimental',
+                       'openpathsampling.initialization']
+    for logger_name in back_to_warning:
+        lgr = logging.getLogger(logger_name)
+        lgr.setLevel(logging.WARNING)
+
     terminate = opts.terminate
     try:
         worker_main_loop()

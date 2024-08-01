@@ -114,6 +114,7 @@ class LaunchTask(SingleTask):
             _logger.info("Building the task graph....")
             task_graph = create_task_graph(scheme, nsteps, object_db)
             _logger.info("Saving initial conditions")
+            init_conds = paths.SampleSet(init_conds)
             for sample in init_conds.samples:
                 object_db.save_sample(sample)
 
@@ -343,7 +344,8 @@ if __name__ == "__main__":
     # as used in debug testing
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--terminate", default=True)
+    parser.add_argument("--terminate", default=True,
+                        action=argparse.BooleanOptionalAction)
     opts = parser.parse_args()
 
     # TODO: figure out who is setting basicConfig on import (force=True

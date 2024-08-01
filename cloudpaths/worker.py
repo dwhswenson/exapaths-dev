@@ -88,15 +88,15 @@ class LaunchTask(SingleTask):
     """
     @property
     def config(self):
-        return self.message['Config']
+        return self.message['config']
 
     def run_task(self, task_id):
         _logger.info("Running LaunchTask")
         _logger.info(self.message)
         bucket = self.config["bucket"]
         prefix = self.config["prefix"]
-        launch_db = self.message['Details']['launch_db']
-        run_path = pathlib.Path(self.message['Details']['working_path'])
+        launch_db = self.message['files']['launch_db']
+        run_path = pathlib.Path(self.message['files']['working_path'])
         task_db = run_path / "tasks" / "taskdb.db"
         _logger.info(f"{bucket=}")
         _logger.info(f"{prefix=}")
@@ -149,12 +149,23 @@ class MoverTask(SingleTask):
     def run_task(self, object_db):
         with object_db.load_task(self.taskid) as mover:
             inp_ens = mover.input_ensembles
+            _logger.info("Loading input samples")
             with object_db.load_sample_set(inp_ens) as active:
+                _logger.info("Performing move")
                 change = mover.mover(active)
+                _logger.info("Saving result")
                 object_db.save_change(self.taskid, change)
                 if change.accepted:
+                    _logger.info("Accepted move! Saving updates...")
                     for sample in change.trials:
                         object_db.save_sample(sample)
+                else:
+                    _logger.info("Rejected move.")
+
+        result = {
+            "result_type": "SUCCESS",
+            "result_data": {}
+        }
 
 
 

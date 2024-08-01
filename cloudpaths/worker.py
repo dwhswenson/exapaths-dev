@@ -114,7 +114,10 @@ class LaunchTask(SingleTask):
             _logger.info("Building the task graph....")
             task_graph = create_task_graph(scheme, nsteps, object_db)
             _logger.info("Saving initial conditions")
-            init_conds = paths.SampleSet(init_conds)
+            scheme = storage.schemes[0]
+            init_conds = scheme.initial_conditions_from_trajectories(
+                init_conds
+            )
             for sample in init_conds.samples:
                 object_db.save_sample(sample)
 
@@ -279,7 +282,7 @@ def run_single_task(message):
     if task_result is not None:
         result_msg = {
             'inputs': {
-                k: v for k, v in msg.items
+                k: v for k, v in msg.items()
                 if k not in ['metadata', 'files', 'config', 'results']
             },
             'metadata': msg['metadata'],

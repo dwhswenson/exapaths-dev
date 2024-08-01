@@ -74,6 +74,9 @@ class SingleTask:
         self.message = message
 
     def claim_task(self):
+        # TODO: this should do something to say to a database that this task
+        # has been claimed by this instance; useful for checking if an
+        # instance has died
         ...
 
     def run_task(self, task_id):
@@ -88,17 +91,18 @@ class LaunchTask(SingleTask):
         return self.message['Config']
 
     def run_task(self, task_id):
-        print(self.message)
+        _logger.info("Running LaunchTask")
+        _logger.info(self.message)
         bucket = self.config["bucket"]
         prefix = self.config["prefix"]
         launch_db = self.message['Details']['launch_db']
         run_path = pathlib.Path(self.message['Details']['working_path'])
         task_db = run_path / "tasks" / "taskdb.db"
-        print(f"{bucket=}")
-        print(f"{prefix=}")
-        print(f"{launch_db=}")
-        print(f"{run_path=}")
-        print(f"{task_db=}")
+        _logger.info(f"{bucket=}")
+        _logger.info(f"{prefix=}")
+        _logger.info(f"{launch_db=}")
+        _logger.info(f"{run_path=}")
+        _logger.info(f"{task_db=}")
         storage_handler = S3StorageHandler(bucket, run_path)
         object_db = SimStoreZipStorage(storage_handler)
         with s3_localfile(bucket, launch_db) as launch_file:
@@ -107,9 +111,11 @@ class LaunchTask(SingleTask):
             metadata = storage.tags['cloudpaths_metadata']
             nsteps = metadata['nsteps']
             init_conds = storage.tags['initial_conditions']
-            print("Building the task graph....")
+            _logger.info("Building the task graph....")
             task_graph = create_task_graph(scheme, nsteps, object_db)
-            # object_db. # TODO: save current state
+            _logger.info("Saving initial conditions")
+            for sample in init_conds.samples:
+                object_db.save_sample(sample)
 
         task_to_deps = {node: list(task_graph.predecessors(node))
                         for node in task_graph.nodes}
@@ -129,11 +135,12 @@ class LaunchTask(SingleTask):
                 ]
             }
         }
-        print(task_message)
+        _logger.info("Sending to result queue:")
+        _logger.info(task_message)
         return task_message
 
 
-class PathMoveTask(SingleTask):
+class MoverTask(SingleTask):
     """A task to perform an OPS path move.
     """
     def __init__(self, taskid):
@@ -145,6 +152,11 @@ class PathMoveTask(SingleTask):
             with object_db.load_sample_set(inp_ens) as active:
                 change = mover.mover(active)
                 object_db.save_change(self.taskid, change)
+                if change.accepted:
+                    for sample in change.trials:
+                        object_db.save_sample(sample)
+
+
 
 
 class StorageTask(SingleTask):
@@ -210,7 +222,7 @@ TASK_TYPE_DISPATCH = {
     "TEST_LAUNCH_MULTIUNBLOCK": ...,
     "TEST_TASK_SUCCESS": ...,
     "TEST_TASK_FAILURE": ...,
-    "MoverTask": ...,
+    "MoverTask": MoverTask,
     "StorageTask": ...,
     "default": ...,
 }
@@ -226,20 +238,20 @@ def run_single_task(message):
     """
     _logger.info(f"Running task from message ID {message['MessageId']}")
     msg = json.loads(message['Body'])
-    print(msg)
-    task_type = TASK_TYPE_DISPATCH[msg['TaskType']]
-    cluster = msg['Cluster']
-    cluster_conf = msg['Config']['clusters'][cluster]
+    _logger.info(msg)
+    task_type = TASK_TYPE_DISPATCH[msg['task_type']]
+    # cluster = msg['cluster']
+    # cluster_conf = msg['Config']['clusters'][cluster]
 
     taskq_url = os.environ.get("CLOUDPATHS_TASK_QUEUE")
-    assert taskq_url == cluster_conf['task_queue']['url']
+    # assert taskq_url == cluster_conf['task_queue']['url']
 
-    resultq_url = msg['Config']['result_queue']['url']
+    resultq_url = msg['config']['result_queue']['url']
 
     task = task_type(msg)
 
     _logger.info("Claiming a task")
-    _logger.debug(f"{msg=}\n{cluster_conf=}")
+    # _logger.debug(f"{msg=}\n{cluster_conf=}")
     task_id = task.claim_task()
     sqs = boto3.client('sqs')
     sqs.delete_message(
@@ -248,17 +260,21 @@ def run_single_task(message):
     )
 
     _logger.info(f"Running task '{task_id}'")
+    # TODO: add a try/except here; failure result if
     task_result = task.run_task(task_id)
 
     _logger.info("Passing results to the result queue")
     if task_result is not None:
         result_msg = {
-            'inputs': msg,
+            'inputs': {
+                k: v for k, v in msg.items
+                if k not in ['metadata', 'files', 'config', 'results']
+            },
+            'metadata': msg['metadata'],
+            'files': msg['files'],
+            'config': msg['config'],
             'results': task_result,
         }
-        bucket = result_msg['inputs']['Config']['bucket']
-        prefix = result_msg['inputs']['Config']['prefix']
-        result_db = result_msg['inputs']['Details']['result_db']
         resp = sqs.send_message(
             QueueUrl=resultq_url,
             MessageBody=json.dumps(result_msg),

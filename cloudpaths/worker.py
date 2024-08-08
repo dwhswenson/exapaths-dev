@@ -127,8 +127,9 @@ class LaunchTask(SingleTask):
         # TODO: we need to distinguish different task types; probably need
         # something in the task object for that
         task_message = {
-            "ResultType": "ADD_TASKS",
-            "ResultData": {
+            "result_type": "ADD_TASKS",
+            "result_data": {
+                # TODO: convert this to lower; here & process_add_tasks
                 "Tasks": [
                     {
                         "TaskId": task_id,
@@ -167,11 +168,10 @@ class MoverTask(SingleTask):
                     _logger.info("Rejected move.")
 
         result = {
-            "result_type": "SUCCESS",
+            "result_type": "SUCCESS_RESULT",
             "result_data": {}
         }
-
-
+        return result
 
 
 class StorageTask(SingleTask):
@@ -229,6 +229,7 @@ class TestFailureTask(_TestTask):
     ...
 
 
+# TODO: convert this into a plugin registry
 TASK_TYPE_DISPATCH = {
     "LAUNCH": LaunchTask,
     "TEST_LAUNCH": TestLaunchTask,
@@ -290,6 +291,9 @@ def run_single_task(message):
             'config': msg['config'],
             'results': task_result,
         }
+        bucket = msg['config']['bucket']
+        prefix = msg['config']['prefix']
+        result_db = msg['files']['result_db']
         resp = sqs.send_message(
             QueueUrl=resultq_url,
             MessageBody=json.dumps(result_msg),

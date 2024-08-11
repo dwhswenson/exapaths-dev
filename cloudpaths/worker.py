@@ -112,7 +112,8 @@ class LaunchTask(SingleTask):
             nsteps = metadata['nsteps']
             init_conds = storage.tags['initial_conditions']
             _logger.info("Building the task graph....")
-            task_graph = create_task_graph(scheme, nsteps, object_db)
+            graph = create_task_graph(scheme, nsteps, object_db)
+            task_graph = graph.to_networkx()
             _logger.info("Saving initial conditions")
             scheme = storage.schemes[0]
             init_conds = scheme.initial_conditions_from_trajectories(
@@ -132,11 +133,11 @@ class LaunchTask(SingleTask):
                 # TODO: convert this to lower; here & process_add_tasks
                 "Tasks": [
                     {
-                        "TaskId": task_id,
-                        "Dependencies": task_to_deps[task_id],
-                        "TaskType": task_graph.nodes[task_id]['obj'].TYPE,
+                        "TaskId": task_obj.uuid,
+                        "Dependencies": task_to_deps[task_obj],
+                        "TaskType": task_graph.nodes[task_obj].TYPE,
                     }
-                    for task_id in nx.topological_sort(task_graph)
+                    for task_obj in nx.topological_sort(task_graph)
                 ]
             }
         }

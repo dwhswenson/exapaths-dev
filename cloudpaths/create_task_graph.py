@@ -5,6 +5,7 @@ import openpathsampling as paths
 from cloudpaths.move_to_ops.preplanned import (
     MoverNode, preplan_pathsampling
 )
+from cloudpaths.dag.dag import DAG
 import networkx as nx
 
 
@@ -26,17 +27,19 @@ def create_task_graph(scheme, nsteps, objectdb):
     # edges between them.
     _all_nodes = set.union(*[{n1, n2} for n1, n2 in edges])
     nodes = {node for node in _all_nodes if not isinstance(node, str)}
-    mover_edges = [(str(n1.uuid), str(n2.uuid)) for n1, n2 in edges
+    mover_edges = [(n1, n2) for n1, n2 in edges
                    if not isinstance(n1, str) and not isinstance(n2, str)]
 
+    # Return one of our graphs
+    graph = DAG(edges=mover_edges, nodes=nodes)
     # create a networkx graph suitable for exorcist (string task names as
     # nodes, we use MoverNode.uuid for task name) -- we attach the node so
     # that exapaths can use this to identify type of task to direct to
     # different queues
-    graph = nx.DiGraph()
-    for node in nodes:
-        graph.add_node(str(node.uuid), obj=node)
-    graph.add_edges_from(mover_edges)
+    # graph = nx.DiGraph()
+    # for node in nodes:
+    #     graph.add_node(str(node.uuid), obj=node)
+    # graph.add_edges_from(mover_edges)
 
     # serialize all tasks to disk
     for node in nodes:
@@ -63,7 +66,10 @@ if __name__ == "__main__":
 
     objectdb = SimStoreZipStorage(LocalFileStorageHandler(root_dir))
     taskdb = TaskStatusDB.from_filename(root_dir / "taskdb.db")
-    task_graph = create_task_graph(scheme, nsteps, objectdb)
+    graph = create_task_graph(scheme, nsteps, objectdb)
+    task_graph = graph.to_networkx(lambda node: str(node.uuid))
+    uuid_to_node = {str(node.uuid): node for node in graph.nodes}
+    nx.set_node_attributes(task_graph, uuid_to_node, 'obj')
 
     # save task graph to exorcist database
     taskdb.add_task_network(task_graph, max_tries=3)

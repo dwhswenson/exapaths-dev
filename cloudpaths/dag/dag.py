@@ -18,6 +18,21 @@ class DAG:
     def from_networkx(cls, nxgraph):
         return cls(edges=list(nxgraph.edges), nodes=list(nxgraph.nodes))
 
+    def to_networkx(self, node_rewriter=None):
+        import networkx as nx
+        graph = nx.DiGraph()
+        if node_rewriter is None:
+            node_rewriter = lambda x: x
+
+        node_to_serialized = {node: node_rewriter(node)
+                              for node in self.nodes}
+        graph.add_nodes_from(node_to_serialized.values())
+        graph.add_edges_from(
+            (node_to_serialized[n1], node_to_serialized[n2])
+            for (n1, n2) in self.edges
+        )
+        return graph
+
 
 class ExecutingDAG:
     """Mutable object for working with DAG execution order"""
@@ -70,7 +85,6 @@ class ExecutingDAG:
             caps = {(self.CAP, node) for node in nodes}
             self._update_counters(node, delta=+1)
 
-
         self.capped |= set(nodes)
         self.edges |= caps
 
@@ -105,6 +119,3 @@ class ExecutingDAG:
         node = self.find_next_node()
         self.mark_node_completed(node)
         return node
-
-
-

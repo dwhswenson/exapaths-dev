@@ -23,7 +23,6 @@ class BatchOrchestrator:
 
     def submit_graph(self, taskgraph):
         task_to_jobid = {}
-        # TODO: this is still a NetworkX graph, not our DAG
         for taskid in taskgraph.execution_order():
             dependencies = [
                 task_to_jobid[dep] for dep, target in taskgraph.edges

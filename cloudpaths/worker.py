@@ -133,7 +133,7 @@ class LaunchTask(SingleTask):
                 # TODO: convert this to lower; here & process_add_tasks
                 "Tasks": [
                     {
-                        "TaskId": task_obj.uuid,
+                        "TaskId": str(task_obj.uuid),
                         "Dependencies": task_to_deps[task_obj],
                         "TaskType": task_obj.TYPE,
                     }

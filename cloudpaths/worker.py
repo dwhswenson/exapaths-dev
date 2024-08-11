@@ -135,7 +135,7 @@ class LaunchTask(SingleTask):
                     {
                         "TaskId": task_obj.uuid,
                         "Dependencies": task_to_deps[task_obj],
-                        "TaskType": task_graph.nodes[task_obj].TYPE,
+                        "TaskType": task_obj.TYPE,
                     }
                     for task_obj in nx.topological_sort(task_graph)
                 ]

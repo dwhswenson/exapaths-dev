@@ -44,6 +44,7 @@ class TaskBatch(abc.Sequence):
 
 
 class TaskGrouper:
+    # TODO: extend this to have more generalized rules of task batches
     def __init__(self, max_expensive=1):
         self.max_expensive = max_expensive
 
@@ -74,7 +75,7 @@ class TaskGrouper:
                 if is_expensive and n_expensive >= self.max_expensive:
                     # cap and move on
                     dag.cap_nodes([task])
-                    return
+                    continue
                 else:
                     if is_expensive:
                         n_expensive += 1
@@ -94,6 +95,7 @@ class TaskGrouper:
 
         # mapping of final nodes from a batch (ready to be linked) the batch
         # it was in
+        # import pdb; pdb.set_trace()
         node_to_batch = {}
         while list_batch := list(self._execution_cycle(exec_dag)):
             batch = TaskBatch(list_batch)

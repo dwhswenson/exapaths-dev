@@ -1,13 +1,18 @@
 import subprocess
 
 import click
+import pathlib
 from cloudpaths.batchorchestrators import BatchOrchestrator
 from cloudpaths.create_task_graph import create_task_graph
+from cloudpaths.run_task import SimStoreZipStorage
 from cloudpaths.move_to_ops.storage_handlers import LocalFileStorageHandler
 
 from paths_cli.parameters import (
     INPUT_FILE, SCHEME, INIT_CONDS, OUTPUT_FILE, N_STEPS_MC,
 )
+
+import logging
+_logger = logging.getLogger(__name__)
 
 class SLURMOrchestrator(BatchOrchestrator):
     def make_executable(self, taskid):
@@ -39,11 +44,14 @@ def slurm():
 @N_STEPS_MC
 @click.option("--template", required=True)
 def submit(input_file, output_file, scheme, init_conds, nsteps, template):
+    storage = INPUT_FILE.get(input_file)
+    scheme = SCHEME.get(storage, scheme)
+    init_conds = INIT_CONDS.get(storage, init_conds)
+
     base_dir = pathlib.Path(output_file).parent
     storage_handler = LocalFileStorageHandler(base_dir / "working")
     objectdb = SimStoreZipStorage(storage_handler)
     task_graph = create_task_graph(scheme, nsteps, objectdb)
-    OrchestratorClass = CLUSTER_TYPES[cluster_type]
     orchestrator = SLURMOrchestrator(template, jobs_dir=base_dir / "jobs")
     orchestrator.submit_graph(task_graph)
 
@@ -60,4 +68,6 @@ def run_task(taskid, working_dir):
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
+
     slurm()

@@ -14,6 +14,10 @@ class DAG:
     def execution_order(self):
         yield from ExecutingDAG(self)
 
+    @classmethod
+    def from_networkx(cls, nxgraph):
+        return cls(edges=list(nxgraph.edges), nodes=list(nxgraph.nodes))
+
 
 class ExecutingDAG:
     """Mutable object for working with DAG execution order"""

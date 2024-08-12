@@ -134,7 +134,9 @@ class LaunchTask(SingleTask):
                 "Tasks": [
                     {
                         "TaskId": str(task_obj.uuid),
-                        "Dependencies": str(task_to_deps[task_obj].uuid),
+                        "Dependencies": [
+                            str(obj.uuid) for obj in task_to_deps[task_obj]
+                        ],
                         "TaskType": task_obj.TYPE,
                     }
                     for task_obj in nx.topological_sort(task_graph)
@@ -158,7 +160,7 @@ class MoverTask(SingleTask):
             _logger.info("Loading input samples")
             with object_db.load_sample_set(inp_ens) as active:
                 _logger.info("Performing move")
-                change = mover.mover(active)
+                change = mover.move(active)
                 _logger.info("Saving result")
                 object_db.save_change(self.taskid, change)
                 if change.accepted:

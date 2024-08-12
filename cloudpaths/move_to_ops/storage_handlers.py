@@ -3,6 +3,10 @@ import os
 import pathlib
 import shutil
 
+import logging
+_logger = logging.getLogger(__name__)
+
+
 
 class StorageHandler(ABC):
     """Abstract treatment of a key-value-like file/object store.
@@ -56,7 +60,10 @@ class LocalFileStorageHandler(StorageHandler):
 
     def load(self, storage_label, target_path):
         target_path.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(self.root / storage_label, target_path)
+        local_path = self.root / storage_label
+        _logger.debug("Copying file from {str(local_path)} "
+                      f"to {str(target_path)}")
+        shutil.copyfile(local_path, target_path)
 
     def delete(self, storage_label):
         os.remove(self.root / storage_label)

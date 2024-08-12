@@ -16,6 +16,8 @@ class BatchOrchestrator:
 
         self.jobs_dir = pathlib.Path(jobs_dir)
         self.working_dir = pathlib.Path(working_dir)
+        self.jobs_dir.mkdir(parents=True, exist_ok=True)
+        self.working_dir.mkdir(parents=True, exist_ok=True)
 
     def submit_job(self, taskid, dependencies) -> str:
         """Return the jobid"""
@@ -23,10 +25,11 @@ class BatchOrchestrator:
 
     def submit_graph(self, taskgraph):
         task_to_jobid = {}
-        for taskid in taskgraph.execution_order():
+        for taskobj in taskgraph.execution_order():
+            taskid = taskobj.uuid
             dependencies = [
-                task_to_jobid[dep] for dep, target in taskgraph.edges
-                if target == taskid
+                task_to_jobid[dep.uuid] for dep, target in taskgraph.edges
+                if target == taskobj
             ]
             task_to_jobid[taskid] = self.submit_job(taskid, dependencies)
 

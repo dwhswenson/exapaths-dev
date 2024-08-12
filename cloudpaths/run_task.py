@@ -8,12 +8,16 @@ import openpathsampling as paths
 from openpathsampling.experimental.storage import Storage, monkey_patch_all
 paths = monkey_patch_all(paths)
 
+import logging
+_logger = logging.getLogger(__name__)
+
 
 @contextmanager
 def SimStoreZipFile(storage_handler, storage_path, mode):
     """Context manager to transparently handle a zipped SimStore file.
     """
     storage_path = pathlib.Path(storage_path)
+    _logger.info(f"Loading storage object '{str(storage_path)}'")
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir = pathlib.Path(tmpdir)
         local_zip = tmpdir / storage_path.name

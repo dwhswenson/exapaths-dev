@@ -1,4 +1,5 @@
 import subprocess
+import sys
 
 import click
 import pathlib
@@ -6,6 +7,7 @@ from cloudpaths.batchorchestrators import BatchOrchestrator
 from cloudpaths.create_task_graph import create_task_graph
 from cloudpaths.run_task import SimStoreZipStorage
 from cloudpaths.move_to_ops.storage_handlers import LocalFileStorageHandler
+from cloudpaths.worker import MoverTask
 
 from paths_cli.parameters import (
     INPUT_FILE, SCHEME, INIT_CONDS, OUTPUT_FILE, N_STEPS_MC,
@@ -17,19 +19,44 @@ _logger = logging.getLogger(__name__)
 class SLURMOrchestrator(BatchOrchestrator):
     def make_executable(self, taskid):
         return (
-            f"python -m cloudpaths.slurm run_task {taskid} --working-dir "
+            f"python -m cloudpaths.slurm run-task {taskid} --working-dir "
             f"{self.working_dir}"
         )
+
+    def _parse_sbatch_output(self, output: str) -> str:
+        """Parse the output of an sbatch command to get the jobid.
+
+        This is a separate function because some clusters use modified versions
+        of sbatch that return something different (e.g., only the job ID).
+
+        Input is assumed to be string and to have trailing newlines chopped.
+        """
+        # 'Submitted batch job 5'
+        expected_init = "Submitted batch job "
+        if not output.startswith(expected_init):
+            raise RuntimeError(
+                    "Unexpected output from `sbatch`: Expected string "
+                    f"starting with '{expected_init}'; received '{output}'."
+            )
+        # we cast to int to raise an error if this is not a valid jobid
+        jobid = str(int(output[len(expected_init):]))
+        return jobid
+
 
     def submit_job(self, taskid, dependencies):
         # taskid is a task identified; dependencies are a list of jobids
         jobfile = self.fill_template(taskid)
-        dependency_str = ":".join(str(dep) for dep in dependencies)
-        cmd = ["sbatch", f"--dependency=afterok:{dependency_str}", jobfile]
-        jobid = subprocess.check_output(cmd)
+        cmd = ["sbatch"]
+        if dependencies:
+            dependency_str = "--dependency=afterok:"
+            dependency_str += ":".join(str(dep) for dep in dependencies)
+            cmd.append(dependency_str)
+
+        cmd.append(jobfile)
+        _logger.info(f"Running: {cmd}")
+        result = subprocess.check_output(cmd).decode(sys.stdout.encoding).strip()
+        jobid = self._parse_sbatch_output(result)
         return jobid
-
-
 
 
 @click.group()
@@ -44,15 +71,25 @@ def slurm():
 @N_STEPS_MC
 @click.option("--template", required=True)
 def submit(input_file, output_file, scheme, init_conds, nsteps, template):
+    _logger.info(f"Loading objects from {input_file}....")
     storage = INPUT_FILE.get(input_file)
     scheme = SCHEME.get(storage, scheme)
     init_conds = INIT_CONDS.get(storage, init_conds)
 
     base_dir = pathlib.Path(output_file).parent
-    storage_handler = LocalFileStorageHandler(base_dir / "working")
+    working = base_dir / "working"
+    storage_handler = LocalFileStorageHandler(working)
     objectdb = SimStoreZipStorage(storage_handler)
+    _logger.info(f"Preplanning the path sampling simulation....")
     task_graph = create_task_graph(scheme, nsteps, objectdb)
-    orchestrator = SLURMOrchestrator(template, jobs_dir=base_dir / "jobs")
+    orchestrator = SLURMOrchestrator(template, jobs_dir=working / "jobs",
+                                     working_dir=working)
+
+    init_conds = scheme.initial_conditions_from_trajectories(init_conds)
+    _logger.info("Storing the initial conditions....")
+    for sample in init_conds:
+        objectdb.save_sample(sample)
+    _logger.info("Submitting the jobs to SLURM")
     orchestrator.submit_graph(task_graph)
 
 
@@ -62,12 +99,23 @@ def submit(input_file, output_file, scheme, init_conds, nsteps, template):
 def run_task(taskid, working_dir):
     storage_handler = LocalFileStorageHandler(working_dir)
     objectdb = SimStoreZipStorage(storage_handler)
-    # TODO: move the code that does this somewhere else, probably
     task = MoverTask(taskid)
     task.run_task(objectdb)
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.INFO, force=True)
+    debug_loggers = [
+    ]
+    for logger_name in debug_loggers:
+        logger = logging.getLogger(logger_name)
+        logger.setLevel(logging.DEBUG)
+
+    warning_loggers = [
+        'openpathsampling.experimental',
+    ]
+    for logger_name in warning_loggers:
+        logger = logging.getLogger(logger_name)
+        logger.setLevel(logging.WARNING)
 
     slurm()

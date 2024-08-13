@@ -108,7 +108,7 @@ class LaunchTask(SingleTask):
         with s3_localfile(bucket, launch_db) as launch_file:
             storage = Storage(launch_file, mode='r')
             scheme = storage.schemes[0]
-            metadata = storage.tags['cloudpaths_metadata']
+            metadata = storage.tags['exapaths_metadata']
             nsteps = metadata['nsteps']
             init_conds = storage.tags['initial_conditions']
             _logger.info("Building the task graph....")
@@ -262,7 +262,7 @@ def run_single_task(message):
     # cluster = msg['cluster']
     # cluster_conf = msg['Config']['clusters'][cluster]
 
-    taskq_url = os.environ.get("CLOUDPATHS_TASK_QUEUE")
+    taskq_url = os.environ.get("EXAPATHS_TASK_QUEUE")
     # assert taskq_url == cluster_conf['task_queue']['url']
 
     resultq_url = msg['config']['result_queue']['url']
@@ -305,9 +305,9 @@ def run_single_task(message):
 
 
 def worker_main_loop(terminate_on_exit=True):
-    taskq_url = os.environ.get("CLOUDPATHS_TASK_QUEUE")
-    max_attempts = int(os.environ.get("CLOUDPATHS_ATTEMPTS"))
-    sleep_time = float(os.environ.get("CLOUDPATHS_WAIT"))
+    taskq_url = os.environ.get("EXAPATHS_TASK_QUEUE")
+    max_attempts = int(os.environ.get("EXAPATHS_ATTEMPTS"))
+    sleep_time = float(os.environ.get("EXAPATHS_WAIT"))
 
     if not (taskq_url and max_attempts and sleep_time):
         ... # TODO: raise error and exit

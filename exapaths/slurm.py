@@ -3,11 +3,11 @@ import sys
 
 import click
 import pathlib
-from cloudpaths.batchorchestrators import BatchOrchestrator
-from cloudpaths.create_task_graph import create_task_graph
-from cloudpaths.run_task import SimStoreZipStorage
-from cloudpaths.move_to_ops.storage_handlers import LocalFileStorageHandler
-from cloudpaths.worker import MoverTask
+from exapaths.batchorchestrators import BatchOrchestrator
+from exapaths.create_task_graph import create_task_graph
+from exapaths.run_task import SimStoreZipStorage
+from exapaths.move_to_ops.storage_handlers import LocalFileStorageHandler
+from exapaths.worker import MoverTask
 
 from paths_cli.parameters import (
     INPUT_FILE, SCHEME, INIT_CONDS, OUTPUT_FILE, N_STEPS_MC,
@@ -19,7 +19,7 @@ _logger = logging.getLogger(__name__)
 class SLURMOrchestrator(BatchOrchestrator):
     def make_executable(self, taskid):
         return (
-            f"python -m cloudpaths.slurm run-task {taskid} --working-dir "
+            f"python -m exapaths.slurm run-task {taskid} --working-dir "
             f"{self.working_dir}"
         )
 

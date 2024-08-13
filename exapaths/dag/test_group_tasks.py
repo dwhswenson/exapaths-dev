@@ -1,5 +1,5 @@
-from cloudpaths.dag.group_tasks import *
-from cloudpaths.dag.dag import DAG
+from exapaths.dag.group_tasks import *
+from exapaths.dag.dag import DAG
 import pytest
 
 class Task:

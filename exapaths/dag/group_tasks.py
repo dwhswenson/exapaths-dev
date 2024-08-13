@@ -2,7 +2,7 @@ import random
 import collections
 from collections import abc
 
-from cloudpaths.dag.dag import ExecutingDAG
+from exapaths.dag.dag import ExecutingDAG
 
 """
 Algorithm for reorganizing tasks so that each task has exactly one expensive

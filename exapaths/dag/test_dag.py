@@ -1,6 +1,6 @@
 import pytest
 
-from cloudpaths.dag.dag import *
+from exapaths.dag.dag import *
 
 @pytest.fixture
 def capped_exec_dag():

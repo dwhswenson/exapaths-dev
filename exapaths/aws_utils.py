@@ -14,7 +14,7 @@ def load_config(bucket_name, prefix=""):
     etc.
     """
     s3 = boto3.client('s3')
-    config = pathlib.Path(prefix) / "cloudpaths-config.json"
+    config = pathlib.Path(prefix) / "exapaths-config.json"
     print(f"Loading config. Bucket: {bucket_name} "
           f"Config file: {str(config)}")
     resp = s3.get_object(Bucket=bucket_name, Key=str(config))
@@ -28,7 +28,7 @@ def store_config(config):
     bucket_name = config['bucket']
     prefix = config['prefix']
     s3 = boto3.client('s3')
-    config_key = pathlib.Path(prefix) / "cloudpaths-config.json"
+    config_key = pathlib.Path(prefix) / "exapaths-config.json"
     s3.put_object(Bucket=bucket_name, Key=str(config_key),
                   Body=json.dumps(config).encode('utf-8'))
 

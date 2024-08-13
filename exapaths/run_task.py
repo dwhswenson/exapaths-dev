@@ -171,7 +171,7 @@ if __name__ == "__main__":
     import sys
     import pathlib
     from openpathsampling.experimental.storage import Storage, monkey_patch_all
-    from cloudpaths.move_to_ops.storage_handlers import LocalFileStorageHandler
+    from exapaths.move_to_ops.storage_handlers import LocalFileStorageHandler
     from .taskdb import TaskStatusDB
     paths = monkey_patch_all(paths)
     basedir = pathlib.Path(sys.argv[1])

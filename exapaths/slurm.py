@@ -5,7 +5,7 @@ import click
 import pathlib
 from exapaths.batchorchestrators import BatchOrchestrator
 from exapaths.create_task_graph import create_task_graph
-from exapaths.run_task import SimStoreZipStorage
+from exapaths.run_task import SimStoreZipStorage, TASK_DISPATCH
 from exapaths.move_to_ops.storage_handlers import LocalFileStorageHandler
 from exapaths.worker import MoverTask
 
@@ -103,8 +103,9 @@ def submit(input_file, output_file, scheme, init_conds, nsteps, template):
 def run_task(taskid, working_dir):
     storage_handler = LocalFileStorageHandler(working_dir)
     objectdb = SimStoreZipStorage(storage_handler)
-    task = MoverTask(taskid)
-    task.run_task(objectdb)
+    with objectdb.load_task(taskid) as task:
+        runner = TASK_DISPATCH[task.TYPE]
+        runner(task, objectdb)
 
 
 if __name__ == "__main__":

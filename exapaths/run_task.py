@@ -163,6 +163,32 @@ class SimStoreZipStorage:
     def task_db_location(self):
         return "tasks/taskdb.db"
 
+def run_mover_task(task, objectdb):
+    print(f"Running task: {task}")
+    mover = task.mover
+    inp_ens = mover.input_ensembles
+    with objectdb.load_sample_set(inp_ens) as active:
+        change = mover.move(active)
+        objectdb.save_change(task.taskid, change)
+    objectdb.update_active_samples(task.taskid)
+
+def run_task_batch(task, objectdb):
+    for subtask in task:
+        task_type = subtask.TYPE
+        runner = TASK_DISPATCH[task_type]
+        runner(subtask, objectdb)
+
+def run_storage_task(task, objectdb):
+    print(f"Running task: {task}")
+    return
+    raise RuntimeError()
+
+TASK_DISPATCH = {
+    "TaskBatch": run_task_batch,
+    "StorageTask": run_storage_task,
+    "MoverTask": run_mover_task,
+}
+
 
 class ExorcistLocalWorker:
     """Run using exorcist taskdb and tasks details stored in objectdb.
@@ -178,45 +204,19 @@ class ExorcistLocalWorker:
     def complete_task(self, taskid):
         self.taskdb.mark_task_completed(taskid)
 
-    def run_task_batch(self, taskbatch):
-        for task in taskbatch:
-            task_type = task.TYPE
-            runner = self.dispatch(task_type)
-            runner(task)
+    def run_task(self, taskid, ntasks=None):
+        task_type = self.taskdb.get_task_type(taskid)
+        print(f"Running task : {taskid} ({task_type}: #{ntasks})")
+        runner = TASK_DISPATCH[task_type]
+        with self.objectdb.load_task(taskid) as task:
+            runner(task, self.objectdb)
 
-    def dispatch(self, tasktype):
-        return {
-            "TaskBatch": self.run_task_batch,
-            "StorageTask": self.run_storage_task,
-            "MoverTask": self.run_mover_task
-        }[tasktype]
-
-    def run_mover_task(self, task):
-        print(f"Running task: {task}")
-        mover = task.mover
-        inp_ens = mover.input_ensembles
-        with self.objectdb.load_sample_set(inp_ens) as active:
-            change = mover.move(active)
-            self.objectdb.save_change(task.taskid, change)
-        self.objectdb.update_active_samples(task.taskid)
-
-    def run_storage_task(self, task):
-        print(f"Running task: {task}")
-        return
-        raise RuntimeError()
+        self.taskdb.mark_task_completed(taskid, success=True)
 
     def run_loop(self):
         ntasks = 1
         while (taskid := self.get_task()) is not None:
-            task_type = self.taskdb.get_task_type(taskid)
-            print(f"Running task : {taskid} ({task_type}: #{ntasks})")
-            runner = self.dispatch(task_type)
-            with self.objectdb.load_task(taskid) as task:
-                runner(task)
-            # remaining here are the parts that happen in lambda
-            # self.objectdb.save_step(taskid)  # TODO
-            # self.objectdb.complete_task(taskid)  # TODO
-            self.taskdb.mark_task_completed(taskid, success=True)
+            self.run_task(taskid, ntasks)
             ntasks += 1
 
 

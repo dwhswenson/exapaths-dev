@@ -1,0 +1,269 @@
+# https://github.com/awslabs/ec2-spot-labs/blob/master/sqs-ec2-spot-asg/sqs-ec2-spot-asg.yaml
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Exapaths setup for a specific network. This needs to be run for each
+  instance type.
+
+Parameters:
+  InstanceTypeParameter:
+    Type: String
+    Default: t2.micro
+    Description: >
+      Enter the instance type for this cluster
+  ResultQueueArn:
+    Type: String
+    Description: >
+      Enter the ARN for the global result queue
+  ClusterName:
+    Type: String
+    Default: exapaths-t2micro
+    Description: >
+      Enter the name for this cluster (used in naming objects)
+  BucketName:
+    Type: String
+    Default: exapaths-1badc0de
+    Description: >
+      Name of the exapaths bucket
+  TaskReadAttempts:
+    Type: Number
+    Default: 10
+    Description: >
+      Queue read attempts a worker will do before shutting down
+  TaskReadRetryWaitTime:
+    Type: Number
+    Default: 10
+    Description: >
+      Time to wait before retrying after a queue read fails
+
+
+Resources:
+
+  # BASIC NETWORKING
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties: 
+      CidrBlock: 10.10.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: exapaths-us-east-2
+        - Key: exapaths
+          Value: exapaths-us-east-2
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.10.1.0/24
+      AvailabilityZone: us-east-2a
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: exapaths-us-east-2-public
+
+  PrivateSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.10.128.0/24
+      AvailabilityZone: us-east-2a
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: exapaths-us-east-2-private
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  InternetRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: "0.0.0.0/0"
+      GatewayId: !Ref InternetGateway
+      RouteTableId: !Ref RouteTable
+
+  PublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref RouteTable
+      SubnetId: !Ref PublicSubnet
+
+  # SQS Queues
+  TaskQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      ContentBasedDeduplication: true
+      DeduplicationScope: queue
+      FifoQueue: true
+      QueueName: exapaths-t2micro-taskq.fifo
+      VisibilityTimeout: 120
+      Tags:
+        - Key: exapaths
+          Value: exapaths
+
+  # Things to define worker nodes: Role/Profile/LaunchTemplate
+  WorkerRole:
+    DependsOn:
+      - TaskQueue
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          Effect: Allow
+          Principal:
+            Service: ec2.amazonaws.com
+          Action: sts:AssumeRole
+      Policies:
+        - PolicyName: exapaths-t2micro-compute-role
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Resource: !GetAtt TaskQueue.Arn
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+              - Effect: Allow
+                Resource: !Sub "${ResultQueueArn}"
+                Action:
+                  - sqs:SendMessage
+              - Effect: Allow
+                # TODO: would be nice to limit this correctly, but I'm
+                # getting circular references
+                Resource: !Sub "arn:aws:autoscaling:${AWS::Region}:${AWS::AccountId}:autoScalingGroup:*"
+                Action:
+                  - autoscaling:TerminateInstanceInAutoScalingGroup
+                # we can probably narrow S3 bucket permissions by A LOT
+              - Effect: Allow
+                Resource: !Sub "arn:aws:s3:::${BucketName}"
+                Action:
+                  - s3:*
+              - Effect: Allow
+                Resource: !Sub "arn:aws:s3:::${BucketName}/*"
+                Action:
+                  - s3:*
+
+  WorkerInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: exapaths-t2micro-compute-profile
+      Roles:
+        - !Ref WorkerRole
+
+  DebugWorkerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow SSH access from anywhere
+      GroupName: DebugSSHAccessSecurityGroup
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: "0.0.0.0/0"
+      VpcId: !Ref VPC
+
+  WorkerLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: exapaths-t2micro-worker
+      VersionDescription: "1.0.0"
+      LaunchTemplateData:
+        KeyName: dwhs-keypair  # TODO: FOR DEBUG
+        ImageId: ami-050b505d50bac12b5
+        InstanceType: t2.micro
+        InstanceInitiatedShutdownBehavior: terminate
+        IamInstanceProfile:
+          Arn: !GetAtt WorkerInstanceProfile.Arn
+        SecurityGroupIds:
+          - !GetAtt DebugWorkerSecurityGroup.GroupId
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            HOME=/home/ec2-user
+            BASHRCD="$HOME/.bashrc.d"
+            mkdir -p $BASHRCD
+
+            source $HOME/miniforge3/bin/activate
+
+            TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+            INSTANCE_ID=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id)
+            # TODO: let's heredoc this for readabality
+            echo "export AWS_INSTANCE_ID=$INSTANCE_ID" >> $BASHRCD/exapaths.sh
+            echo "export EXAPATHS_TASK_QUEUE=https://sqs.us-east-2.amazonaws.com/895374217207/exapaths-t2micro-taskq.fifo" >> $BASHRCD/exapaths.sh
+            echo "export EXAPATHS_ATTEMPTS=10" >> $BASHRCD/exapaths.sh
+            echo "export EXAPATHS_WAIT=10" >> $BASHRCD/exapaths.sh
+            echo "export AWS_DEFAULT_REGION=us-east-2" >> $BASHRCD/exapaths.sh
+
+            chown -R ec2-user:ec2-user $BASHRCD
+
+            # from here is the developer version
+            # GITHUB TOKEN WILL EXPIRE  (only used for dev)
+            git clone https://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@github.com/dwhswenson/exapaths-private.git $HOME/exapaths-private
+
+            chown -R ec2-user:ec2-user $HOME/exapaths-private
+
+            python -m pip install -e $HOME/exapaths-private
+            # TODO: launch the worker
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: exapaths
+                Value: exapaths
+
+# TODO: try to build one by hand before doing cloudformation here
+  WorkerAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: WorkerAutoscalingGroup
+      DefaultInstanceWarmup: 60
+      DesiredCapacity: 0
+      MaxSize: 10
+      MinSize: 0
+      NewInstancesProtectedFromScaleIn: true
+      VPCZoneIdentifier:
+        - !Ref PublicSubnet
+      LaunchTemplate:
+        LaunchTemplateId: !Ref WorkerLaunchTemplate
+        Version: !GetAtt WorkerLaunchTemplate.LatestVersionNumber
+      # TODO: MetricsCollection?
+    
+  WorkerScalingPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref WorkerAutoScalingGroup
+      PolicyType: SimpleScaling
+      AdjustmentType: ChangeInCapacity
+      ScalingAdjustment: 1
+
+  WorkerAutoScalingAlarm:
+    DependsOn:
+      - TaskQueue
+      - WorkerScalingPolicy
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      # alarm name; alarm description
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Statistic: Average
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt TaskQueue.QueueName
+      Threshold: 0.5
+      ComparisonOperator: "GreaterThanThreshold"
+      AlarmActions:
+        - !Ref WorkerScalingPolicy
+      EvaluationPeriods: 1
+      Period: 60

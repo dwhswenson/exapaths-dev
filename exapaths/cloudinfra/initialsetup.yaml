@@ -1,0 +1,220 @@
+# NOTE: must be called with -capabilities CAPABILITY_NAMED_IAM
+#
+# USEFUL LINKS:
+# https://stackoverflow.com/a/58170514/
+# https://www.itonaut.com/2018/10/03/implement-s3-bucket-lambda-triggers-in-aws-cloudformation/
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Exapaths core installation. Run this once per AWS account.
+  (1) sets up S3 bucket;
+  (2) sets up launcher lambda function, and triggers it from the S3 bucket;
+  and
+  (3) adds admin permissions and roles  # TODO
+
+Parameters:
+  BucketNameParameter:
+    Type: String
+    Default: exapaths-1badc0de
+    Description: >
+      Enter the name for the bucket to create for Exapaths data.
+  #BucketPrefixParameter:
+    #Type: String
+    #Default: ""
+    #Description: >
+      #Enter the prefix to be used for Exapaths within the bucket. Note
+      #that the prefix should end in '/' if it is not empty.
+  #LambdasDirectory:
+    #Type: String
+    #Default: "../lambdas/"
+    #Description: >
+      #Directory where the lambda functions can be found
+
+Resources:
+  LauncherRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: exapaths-run-launcher
+      Description: >
+        Role assumed by lambda when launching a exapaths run. Needs to
+        read from S3 to get the config and metadata, and needs to write to
+        the SQS queues for the clusters.
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+      Policies:
+        - PolicyName: launch-exapaths-run
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Resource: "arn:aws:logs:*:*:*"
+                Action:
+                  - logs:PutLogEvents
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+              - Effect: Allow
+                # TODO: I think we can limit this to config file and
+                # metadata prefix
+                Resource: !Sub "arn:aws:s3:::${BucketNameParameter}/*"
+                Action:
+                  - s3:GetObject
+              - Effect: Allow
+                Action:
+                  - sqs:SendMessage
+                Resource: "*"
+              # TODO: maybe limit that just a little? use tags?
+              # https://docs.aws.amazon.com/IAM/latest/UserGuide/access_tags.html#access_tags_control-resources
+      Tags:
+        - Key: exapaths
+          Value: exapaths
+
+  LauncherLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: >
+        Lambda invoked to launch a exapaths run. This is triggered by
+        addition of a file to the S3 bucket.
+      Code:
+        # Note that this is just a placeholder. We update it with a zip file
+        # later
+        ZipFile: >
+          def lambda_handler(event, context): pass
+      Handler: launch_run.lambda_handler
+      FunctionName: launch-run
+      Runtime: python3.12
+      Timeout: 60
+      Role: !GetAtt LauncherRole.Arn
+
+  LauncherLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref LauncherLambda
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceArn: !Sub "arn:aws:s3:::${BucketNameParameter}"
+
+  ExapathsBucket:
+    Type: AWS::S3::Bucket
+    DependsOn:
+      - LauncherLambdaPermission
+    Properties:
+      BucketName: !Ref BucketNameParameter
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: s3:ObjectCreated:*
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    # TODO: fix hard-coding (no prefix)
+                    Value: launches/
+            Function: !GetAtt LauncherLambda.Arn
+
+  # TODO: separate queue and lambda for task claims? (should be easy)
+  #
+  ResultQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      ContentBasedDeduplication: true
+      DeduplicationScope: messageGroup
+      FifoQueue: true
+      QueueName: exapaths-t2micro-resultq.fifo
+      VisibilityTimeout: 120
+      Tags:
+        - Key: exapaths
+          Value: exapaths
+
+  ResultQueueLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: allowLogs
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "arn:aws:logs:*:*:*"
+        - PolicyName: allowResultQueueProcessing
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                  - sqs:ChangeMessageVisibility
+                Resource: !GetAtt ResultQueue.Arn
+        - PolicyName: allowSqsTaskSubmission
+          PolicyDocument:  # TODO: reuse this policy between lambdas
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:SendMessage
+                Resource: "*"
+        - PolicyName: allowS3ReadWrite
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:*
+                Resource: !Sub "arn:aws:s3:::${BucketNameParameter}"
+              - Effect: Allow
+                Action:
+                  - s3:*
+                Resource: !Sub "arn:aws:s3:::${BucketNameParameter}/*"
+                # TODO: narrow this scope
+
+  ResultQueueLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: >
+        Lambda to process results and manage the task queue database. This
+        is triggered by the presence of messages in the ResultQueue.
+      Code:
+        # Note that this is just a placeholder. We update it with a zip file
+        # later
+        ZipFile: >
+          def lambda_handler(event, context): pass
+      Handler: result_handler.lambda_handler
+      FunctionName: process-results
+      Runtime: python3.12
+      Timeout: 60
+      Role: !GetAtt ResultQueueLambdaRole.Arn
+
+  ResultQueueEventSourceMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      BatchSize: 10
+      Enabled: True
+      EventSourceArn: !GetAtt ResultQueue.Arn
+      FunctionName: !GetAtt ResultQueueLambda.Arn
+
+  # TODO: set up admin account settings
+
+Outputs:
+  ExapathsBucket:
+    Description: S3 bucket used by this installation of exapaths
+    Value: ExapathsBucket
+  ResultQueue:
+    Description: SQS queue to process results and manage the task database
+    Value: ResultQueue

@@ -2,7 +2,11 @@ import random
 import collections
 from collections import abc
 
-from exapaths.dag.dag import ExecutingDAG
+from exapaths.dag.dag import ExecutingDAG, DAG
+from exapaths.move_to_ops.tasknodes import StorageTaskNode, TaskBatch
+
+import logging
+_logger = logging.getLogger(__name__)
 
 """
 Algorithm for reorganizing tasks so that each task has exactly one expensive
@@ -16,31 +20,6 @@ move.
     b. No tasks are available. At this point, uncap one of the capped tasks,
        making it available. Restart the execution cycle.
 """
-
-class TaskBatch(abc.Sequence):
-    def __init__(self, batch):
-        self._list_batch = list(batch)
-        self._set_batch = set(batch)
-
-    def __contains__(self, item):
-        return item in self._set_batch
-
-    def __len__(self):
-        return len(self._list_batch)
-
-    def __getitem__(self, item):
-        return self._list_batch[item]
-
-    def __repr__(self):
-        return f"{self.__class__.__name__}({self._list_batch})"
-
-    def __eq__(self, other):
-        if isinstance(other, self.__class__):
-            return self._list_batch == other._list_batch
-        return NotImplemented
-
-    def __hash__(self):
-        return hash(frozenset(self._set_batch))
 
 
 class TaskGrouper:
@@ -95,10 +74,11 @@ class TaskGrouper:
 
         # mapping of final nodes from a batch (ready to be linked) the batch
         # it was in
-        # import pdb; pdb.set_trace()
         node_to_batch = {}
+        nodes = set()
         while list_batch := list(self._execution_cycle(exec_dag)):
             batch = TaskBatch(list_batch)
+            nodes.add(batch)
             node_to_batch.update({node: batch for node in batch})
             for node in batch:
                 external = {inp for inp in node_to_input[node]
@@ -106,15 +86,54 @@ class TaskGrouper:
                 edges = {(node_to_batch[ext], batch) for ext in external}
                 rebatch_edges |= edges
 
-        return rebatch_edges
+        return DAG(rebatch_edges, nodes=nodes)
 
 
 class OPSTaskGrouper(TaskGrouper):
     def is_expensive(self, task):
-        # tasks here are instance methods from an OPS pathmover; this needs
-        # to be made into a thing on the OPS mover object itself
-        cheap_movers = [
+        cheap_movers = {
             'ReplicaExchangeMover',
             'PathReversalMover',
-        ]
-        return task.__self__.__class__.__name not in cheap_movers
+        }
+        return task.mover.__class__.__name__ not in cheap_movers
+
+
+class StorageRegrouper(TaskGrouper):
+    def _execution_cycle(self, dag):
+        storage_tasks = []
+        while True:
+            try:
+                task = dag.find_next_node()
+            except StopIteration:
+                # no tasks available, either all capped or we're done
+                if storage_tasks:
+                    # can't add tasks; yield the ones we've save and finish
+                    yield from storage_tasks
+                    return
+                else:
+                    if capped := dag.capped:
+                        # uncap a task and continue
+                        chosen = random.choice(list(capped))
+                        dag.uncap_nodes([chosen])
+                        continue
+                    else:
+                        # no available tasks; no capped tasks: we're done
+                        return
+            else:
+                # we got a task; handle it
+                if isinstance(task, StorageTaskNode):
+                    # add to our storage tasks
+                    storage_tasks.append(task)
+                    dag.mark_node_completed(task)
+                    continue
+                else:
+                    # task is an existing task batch
+                    if storage_tasks:
+                        # if we already have storage tasks, we cap this an move on
+                        dag.cap_nodes([task])
+                        continue
+                    else:
+                        # if we don't have storage tasks, we return this task batch
+                        yield task
+                        dag.mark_node_completed(task)
+                        return

@@ -8,11 +8,19 @@ class DAG:
         else:
             nodes = set(nodes)
 
-        edge_nodes = set.union(*[set(edge) for edge in edges])
+        if len(edges) > 0:
+            edge_nodes = set.union(*[set(edge) for edge in edges])
+        else:
+            # TODO: add test to cover this: no edges included
+            edge_nodes = set()
         self.nodes = nodes.union(edge_nodes)
 
     def execution_order(self):
         yield from ExecutingDAG(self)
+
+    def __repr__(self):
+        return (f"<{self.__class__.__name__} with {len(self.nodes)} nodes "
+                f"and {len(self.edges)} edges at {hex(id(self))}>")
 
     @classmethod
     def from_networkx(cls, nxgraph):

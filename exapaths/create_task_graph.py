@@ -8,8 +8,11 @@ from exapaths.move_to_ops.preplanned import (
 from exapaths.dag.dag import DAG
 import networkx as nx
 
+from exapaths.dag.create_batched_dag import create_batched_dag
 
-def create_task_graph(scheme, nsteps, objectdb):
+
+def create_task_graph(scheme, nsteps, objectdb, *, max_expensive_tasks=1,
+                      store_every=1):
     """
     Save individual tasks to task storage; return task graph
 
@@ -17,6 +20,15 @@ def create_task_graph(scheme, nsteps, objectdb):
     tasks to storage in a way that it can be reloaded later, and return a
     networkx graph suitable for loading in Exorcist.
     """
+    dag = create_batched_dag(scheme, nsteps,
+                             max_expensive_tasks=max_expensive_tasks,
+                             store_every=store_every)
+    for node in dag.nodes:
+        objectdb.save_task(node)
+
+    return dag
+
+    # THIS IS OLD STUFF TO REMOVE
     # plan the graph using preplan_pathsampling
     edges = preplan_pathsampling(scheme, nsteps)
 
@@ -67,8 +79,8 @@ if __name__ == "__main__":
     objectdb = SimStoreZipStorage(LocalFileStorageHandler(root_dir))
     taskdb = TaskStatusDB.from_filename(root_dir / "taskdb.db")
     graph = create_task_graph(scheme, nsteps, objectdb)
-    task_graph = graph.to_networkx(lambda node: str(node.uuid))
-    uuid_to_node = {str(node.uuid): node for node in graph.nodes}
+    task_graph = graph.to_networkx(lambda node: str(node.uuid.hex))
+    uuid_to_node = {str(node.uuid.hex): node for node in graph.nodes}
     nx.set_node_attributes(task_graph, uuid_to_node, 'obj')
 
     # save task graph to exorcist database

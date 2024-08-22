@@ -1,5 +1,9 @@
 import uuid
 import numpy as np
+import inspect
+
+from exapaths.dag.dag import DAG
+from exapaths.move_to_ops.tasknodes import MoverNode, StorageTaskNode
 
 
 def preselect_movers(scheme, nsteps):
@@ -11,51 +15,6 @@ def preselect_movers(scheme, nsteps):
     movers, probs = zip(*scheme.choice_probability.items())
     mover_nums = np.random.choice(range(len(movers)), nsteps, p=probs)
     return [movers[num] for num in mover_nums]
-
-
-class TaskNode:
-    """Generic node representing a task.
-
-    Subclasses should specify TYPE.
-    """
-    TYPE = None
-    def __init__(self):
-        self.uuid = uuid.uuid4()
-
-
-class StorageTaskNode(TaskNode):
-    """Task node for storage tasks.
-
-    This needs to know which mover task IDs it is associated with.
-    """
-    TYPE = "StorageTask"
-    def __init__(self, step_number, mover_tasks):
-        super().__init__()
-        self.mover_tasks = mover_tasks
-        self.step_number = step_number
-
-    def __repr__(self):
-        # TODO: maybe shorten the mover tasks representation?
-        return (f"{self.__class__.__name__}({self.step_number}, "
-                f"mover_tasks={self.mover_tasks})")
-
-
-class MoverNode(TaskNode):
-    """Node in the graph of movers.
-
-    This essentially just adds a UUID for each node to distinguish multiple
-    uses of the same mover. It also provides better string representation.
-    """
-    TYPE = "MoverTask"
-    def __init__(self, mover, number):
-        super().__init__()
-        self.number = number
-        self.mover = mover
-
-    def __repr__(self):
-        ens_names = [f"'{e.name}'" for e in self.mover.input_ensembles]
-        moverstr = f"{self.mover.__class__.__name__}({','.join(ens_names)})"
-        return f"MoverNode({moverstr}, '{str(self.uuid)[:8]}')"
 
 
 def mover_list_to_graph(scheme, mover_list, start_from=1):
@@ -83,33 +42,62 @@ def mover_list_to_graph(scheme, mover_list, start_from=1):
     return edges
 
 
-def add_storage(mover_graph, store_every=1):
-    """Add storage tasks to an existing mover graph.
-    """
-    number_to_node = {node.number: node for node in mover_graph.nodes}
-    min_num = min(number_to_node)
-    max_num = max(number_to_node)
-    # TODO: figure out efficient algorithm for this; I think the trick will
-    # just be to make new edges to the tasks that we need
-    new_edges = []
-    _mover_tasks = []
-    prev_storage_task = None
-    for num in range(min_num, max_num+1):
-        _mover_tasks.append(number_to_node[num])
-        if num % store_every == 0:
-            storage_task = StorageTask(
-                step_number=num,
-                mover_tasks=[str(task.uuid) for task in _mover_tasks]
-            )
-            new_edges.extend([
-                (task, storage_task) for task in _mover_tasks
-            ])
-            if prev_storage_task is not None:
-                new_edges.append((prev_storage_task, storage_task))
+def edges_to_dag(edges):
+    # TODO: this should be the output of the preplan_pathsampling; not just the edges
+    def is_node(node):
+        return not isinstance(node, str)
 
-            prev_storage_task = storage_task
-            _mover_tasks = []
-    # TODO: add new_edges to mover_graph
+    nodes = set.union(*[
+        set(n for n in edge if is_node(n))
+        for edge in edges
+    ])
+    true_edges = [(n1, n2) for n1, n2 in edges if is_node(n1) and is_node(n2)]
+    return DAG(true_edges, nodes=nodes)
+
+
+def itertools_batched(iterable, n):
+    from itertools import islice
+    # available in itertools starting in Python 3.12; this is used in
+    # add_storage_every_n
+    # batched('ABCDEFG', 3) → ABC DEF G
+    if n < 1:
+        raise ValueError('n must be at least one')
+    iterator = iter(iterable)
+    while batch := tuple(islice(iterator, n)):
+        yield batch
+
+
+def add_storage_every_n(batched_dag, nsteps=1):
+    num_to_taskbatch = {
+        movernode.number: taskbatch
+        for taskbatch in batched_dag.nodes
+        for movernode in taskbatch
+    }
+    num_to_taskid = {
+        movernode.number: movernode.uuid.hex
+        for taskbatch in batched_dag.nodes
+        for movernode in taskbatch
+    }
+    min_val = min(num_to_taskbatch)
+    max_val = max(num_to_taskbatch)
+    storage_batchnums = itertools_batched(range(min_val, max_val+1), nsteps)
+    edges = set()
+    storage_nodes = set()
+    prev_storage_node = None
+    for storage_batch in storage_batchnums:
+        from_batches = set(num_to_taskbatch[num] for num in storage_batch)
+        mover_uuids = [num_to_taskid[num] for num in storage_batch]
+        storage_node = StorageTaskNode(step_number=max(storage_batch),
+                                       mover_tasks=mover_uuids)
+        local_edges = set((batch, storage_node) for batch in from_batches)
+        if prev_storage_node:
+            local_edges.add((prev_storage_node, storage_node))
+        edges |= local_edges
+        storage_nodes.add(storage_node)
+        prev_storage_node = storage_node
+
+    dag = DAG(batched_dag.edges | edges, nodes=batched_dag.nodes | storage_nodes)
+    return dag
 
 
 def preplan_pathsampling(scheme, nsteps, start_from=1):

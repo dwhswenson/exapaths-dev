@@ -8,6 +8,8 @@ import openpathsampling as paths
 from openpathsampling.experimental.storage import Storage, monkey_patch_all
 paths = monkey_patch_all(paths)
 
+from exapaths.move_to_ops.tasknodes import TaskNode
+
 import logging
 _logger = logging.getLogger(__name__)
 
@@ -15,6 +17,26 @@ _logger = logging.getLogger(__name__)
 @contextmanager
 def SimStoreZipFile(storage_handler, storage_path, mode):
     """Context manager to transparently handle a zipped SimStore file.
+
+    This allows us to yield out the OPS (SimStore) Storage object,
+    regardless of how/where teh data is actually stored (filesystem, S3,
+    etc.)
+
+    Parameters
+    ----------
+    storage_handler : StorageHandler
+        Base storage location for the zipped file
+    storage_path : str
+        Key for where the zipped file is stored within the storage handler
+        (e.g., path to the file)
+    mode : 'r' or 'w'
+        Whether to load the file for reading only ('r') or read/write/append
+        ('w').
+
+    Yields
+    ------
+    storage : Storage
+        The OPS/SimStore storage object at this path
     """
     storage_path = pathlib.Path(storage_path)
     _logger.info(f"Loading storage object '{str(storage_path)}'")
@@ -41,9 +63,14 @@ def SimStoreZipFile(storage_handler, storage_path, mode):
 
 
 class SimStoreZipStorage:
-    """This is an object storage model where all objects (each active
-    sample, each change) are stored in indivual SimStore zip/db files. Then
-    the changes can be collected into stnadard SimStore db as the final
+    """OPS object storage using individual SimStore zip/db files.
+
+    Each task, each active sample and each change coming from a completed
+    move is saved as a zipped SimStore database. The task can be determined
+    before running the simulation; the active samples are the context at the
+    moment the task is run, and the change object is the output of a task.
+
+    The changes can be collected into standard SimStore db as the final
     result storage.
     """
     def __init__(self, storage_handler):
@@ -57,14 +84,16 @@ class SimStoreZipStorage:
                                storage_path,
                                mode=mode)
 
-    def save_task(self, taskid, task):
+    def save_task(self, task):
+        taskid = task.uuid.hex
         with self._get_storage(f"tasks/{taskid}.zip", mode='w') as storage:
-            storage.tags['task'] = task
+            storage.tags['task'] = task.to_dict()
 
     @contextmanager
     def load_task(self, taskid):
         with self._get_storage(f"tasks/{taskid}.zip", mode='r') as storage:
-            yield storage.tags['task']
+            serialized = storage.tags['task']
+            yield TaskNode.from_dict(serialized)
 
     @contextmanager
     def load_sample_set(self, ensembles=None):
@@ -98,41 +127,45 @@ class SimStoreZipStorage:
                 for sample in change.trials:
                     self.save_sample(sample)
 
-    def save_step(self, taskid, previous):
-        # TODO: there may be a smarter way to do this than actually loading
-        # everything up; seems like an S3-based change and active could be
-        # minimal in loading the actual contents, this saving a lot of
-        # memory requirements
+    @contextmanager
+    def get_permanent_storage(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir = pathlib.Path(tmpdir)
+            local_results = tmpdir / "results.db"
+            results_db = "results/results.db"
+            self.storage_handler.load(results_db, local_results)
+            storage = Storage(local_results)
+            try:
+                yield storage
+            finally:
+                storage.sync_all()
+                self.storage_handler.save(results_db, local_results)
+
+
+    def save_step(self, taskid, mccycle):
+        # this assumes that we have exclusive access to the storage during
+        # this function
         with self._get_storage(f"changes/{taskid}.zip", mode='r') as ch_st:
             change = ch_st.tags['result']
-
-        active = self.load_sample_set()
-        # save the step
-        # TODO: attach time to step details
-        step = paths.MCStep(
-            simulation=...,  # TODO
-            mccycle=...,  # TODO
-            previous=None,  # not used by SimStore
-            active=active,
-            change=change,
-        )
-        with tempfile.TemporaryDirectory() as tmpdir:
-            local_results = tmpdir / "results.db"
-            self.storage_hander.load("results/results.db", local_results)
-            storage = Storage(local_results)
-            storage.save(step)
-            storage.sync_all()
-            self.storage_handler.save("results/results.db", local_results)
+            with self.get_permanent_storage() as storage:
+                last_step = storage.steps[-1]
+                last_active = last_step.active
+                assert last_step.mccycle == mccycle - 1
+                step = paths.MCStep(
+                    simulation="fill_this_im",
+                    mccycle=mccycle,
+                    previous=None,  # not used by SimStore
+                    active=active,
+                    change=change,
+                )
+                storage.save(step)
 
     def task_db_location(self):
         return "tasks/taskdb.db"
 
-    def result_db_location(self):
-        ...
 
-
-class SerialTaskRunner:
-    """
+class ExorcistLocalWorker:
+    """Run using exorcist taskdb and tasks details stored in objectdb.
     """
     def __init__(self, objectdb, taskdb, simid):
         self.objectdb = objectdb
@@ -145,22 +178,42 @@ class SerialTaskRunner:
     def complete_task(self, taskid):
         self.taskdb.mark_task_completed(taskid)
 
-    def run_task(self, taskid):
-        # this will be the worker part on a cluster
-        with self.objectdb.load_task(taskid) as mover:
-            inp_ens = mover.input_ensembles
-            with self.objectdb.load_sample_set(inp_ens) as active:
-                change = mover.move(active)
-                self.objectdb.save_change(taskid, change)
+    def run_task_batch(self, taskbatch):
+        for task in taskbatch:
+            task_type = task.TYPE
+            runner = self.dispatch(task_type)
+            runner(task)
+
+    def dispatch(self, tasktype):
+        return {
+            "TaskBatch": self.run_task_batch,
+            "StorageTask": self.run_storage_task,
+            "MoverTask": self.run_mover_task
+        }[tasktype]
+
+    def run_mover_task(self, task):
+        print(f"Running task: {task}")
+        mover = task.mover
+        inp_ens = mover.input_ensembles
+        with self.objectdb.load_sample_set(inp_ens) as active:
+            change = mover.move(active)
+            self.objectdb.save_change(task.taskid, change)
+        self.objectdb.update_active_samples(task.taskid)
+
+    def run_storage_task(self, task):
+        print(f"Running task: {task}")
+        return
+        raise RuntimeError()
 
     def run_loop(self):
         ntasks = 1
         while (taskid := self.get_task()) is not None:
             task_type = self.taskdb.get_task_type(taskid)
             print(f"Running task : {taskid} ({task_type}: #{ntasks})")
-            self.run_task(taskid)
+            runner = self.dispatch(task_type)
+            with self.objectdb.load_task(taskid) as task:
+                runner(task)
             # remaining here are the parts that happen in lambda
-            self.objectdb.update_active_samples(taskid)
             # self.objectdb.save_step(taskid)  # TODO
             # self.objectdb.complete_task(taskid)  # TODO
             self.taskdb.mark_task_completed(taskid, success=True)
@@ -180,6 +233,6 @@ if __name__ == "__main__":
     objectdb = SimStoreZipStorage(handler)
     taskdb = TaskStatusDB.from_filename(basedir / 'taskdb.db')
 
-    worker = SerialTaskRunner(objectdb, taskdb, simid=str(basedir))
+    worker = ExorcistLocalWorker(objectdb, taskdb, simid=str(basedir))
     worker.run_loop()
 

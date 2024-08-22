@@ -210,12 +210,11 @@ Resources:
             chown -R ec2-user:ec2-user $BASHRCD
 
             # from here is the developer version
-            # GITHUB TOKEN WILL EXPIRE  (only used for dev)
-            git clone https://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@github.com/dwhswenson/exapaths-private.git $HOME/exapaths-private
+            git clone https://github.com/dwhswenson/exapaths-dev.git $HOME/exapaths
 
-            chown -R ec2-user:ec2-user $HOME/exapaths-private
+            chown -R ec2-user:ec2-user $HOME/exapaths
 
-            python -m pip install -e $HOME/exapaths-private
+            python -m pip install -e $HOME/exapaths
             # TODO: launch the worker
         TagSpecifications:
           - ResourceType: instance

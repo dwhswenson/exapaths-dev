@@ -71,10 +71,11 @@ def slurm():
 @N_STEPS_MC
 @click.option("--template", required=True)
 def submit(input_file, output_file, scheme, init_conds, nsteps, template):
+    import openpathsampling as paths
     _logger.info(f"Loading objects from {input_file}....")
     storage = INPUT_FILE.get(input_file)
     scheme = SCHEME.get(storage, scheme)
-    init_conds = INIT_CONDS.get(storage, init_conds)
+    init_conds = INIT_CONDS.get(storage, init_conds)[0]
 
     base_dir = pathlib.Path(output_file).parent
     working = base_dir / "working"
@@ -84,6 +85,9 @@ def submit(input_file, output_file, scheme, init_conds, nsteps, template):
     task_graph = create_task_graph(scheme, nsteps, objectdb)
     orchestrator = SLURMOrchestrator(template, jobs_dir=working / "jobs",
                                      working_dir=working)
+
+    if isinstance(init_conds, paths.SampleSet):
+        init_conds = [s.trajectory for s in init_conds]
 
     init_conds = scheme.initial_conditions_from_trajectories(init_conds)
     _logger.info("Storing the initial conditions....")

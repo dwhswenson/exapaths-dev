@@ -26,9 +26,9 @@ class BatchOrchestrator:
     def submit_graph(self, taskgraph):
         task_to_jobid = {}
         for taskobj in taskgraph.execution_order():
-            taskid = taskobj.uuid
+            taskid = taskobj.uuid.hex
             dependencies = [
-                task_to_jobid[dep.uuid] for dep, target in taskgraph.edges
+                task_to_jobid[dep.uuid.hex] for dep, target in taskgraph.edges
                 if target == taskobj
             ]
             task_to_jobid[taskid] = self.submit_job(taskid, dependencies)

@@ -6,13 +6,14 @@ from exapaths.move_to_ops.preplanned import (
     MoverNode, preplan_pathsampling
 )
 from exapaths.dag.dag import DAG
+from exapaths.simulation import ExapathsSimulation
 import networkx as nx
 
 from exapaths.dag.create_batched_dag import create_batched_dag
 
 
 def create_task_graph(scheme, nsteps, objectdb, *, max_expensive_tasks=1,
-                      store_every=1):
+                      store_every=1, simulation=None):
     """
     Save individual tasks to task storage; return task graph
 
@@ -22,7 +23,8 @@ def create_task_graph(scheme, nsteps, objectdb, *, max_expensive_tasks=1,
     """
     dag = create_batched_dag(scheme, nsteps,
                              max_expensive_tasks=max_expensive_tasks,
-                             store_every=store_every)
+                             store_every=store_every,
+                             simulation=simulation)
     for node in dag.nodes:
         objectdb.save_task(node)
 
@@ -78,7 +80,8 @@ if __name__ == "__main__":
 
     objectdb = SimStoreZipStorage(LocalFileStorageHandler(root_dir))
     taskdb = TaskStatusDB.from_filename(root_dir / "taskdb.db")
-    graph = create_task_graph(scheme, nsteps, objectdb)
+    sim = ExapathsSimulation()
+    graph = create_task_graph(scheme, nsteps, objectdb, simulation=sim)
     task_graph = graph.to_networkx(lambda node: str(node.uuid.hex))
     uuid_to_node = {str(node.uuid.hex): node for node in graph.nodes}
     nx.set_node_attributes(task_graph, uuid_to_node, 'obj')
@@ -93,5 +96,6 @@ if __name__ == "__main__":
         init_conds = st.tags['initial_trajectory']
 
     init_conds = scheme.initial_conditions_from_trajectories(init_conds)
+    objectdb.save_initial_conditions(scheme, init_conds, simulation=sim)
     for sample in init_conds:
         objectdb.save_sample(sample)

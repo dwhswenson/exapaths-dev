@@ -17,7 +17,7 @@ def preselect_movers(scheme, nsteps):
     return [movers[num] for num in mover_nums]
 
 
-def mover_list_to_graph(scheme, mover_list, start_from=1):
+def mover_list_to_graph(scheme, mover_list, start_from=1, simulation=None):
     """Convert a list of movers to edge pairs for a DAG
 
     This tracks the dependency of results for different ensembles across for
@@ -27,7 +27,8 @@ def mover_list_to_graph(scheme, mover_list, start_from=1):
     last_mover = {e: f"initial {e.name}" for e in scheme.network.all_ensembles}
     for num, mover in enumerate(mover_list):
         input_ensembles, output_ensembles = mover.ensemble_signature_set
-        node = MoverNode(mover, number=num + start_from)
+        node = MoverNode(mover, number=num + start_from,
+                         simulation=simulation)
         for inp_ens in input_ensembles:
             prev = last_mover[inp_ens]
             last_mover[inp_ens] = None
@@ -86,7 +87,7 @@ def add_storage_every_n(batched_dag, nsteps=1):
     prev_storage_node = None
     for storage_batch in storage_batchnums:
         from_batches = set(num_to_taskbatch[num] for num in storage_batch)
-        mover_uuids = [num_to_taskid[num] for num in storage_batch]
+        mover_uuids = {num_to_taskid[num]: num for num in storage_batch}
         storage_node = StorageTaskNode(step_number=max(storage_batch),
                                        mover_tasks=mover_uuids)
         local_edges = set((batch, storage_node) for batch in from_batches)
@@ -100,8 +101,8 @@ def add_storage_every_n(batched_dag, nsteps=1):
     return dag
 
 
-def preplan_pathsampling(scheme, nsteps, start_from=1):
+def preplan_pathsampling(scheme, nsteps, start_from=1, simulation=None):
     """
     """
     mover_list = preselect_movers(scheme, nsteps)
-    return mover_list_to_graph(scheme, mover_list, start_from)
+    return mover_list_to_graph(scheme, mover_list, start_from, simulation)

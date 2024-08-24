@@ -110,6 +110,25 @@ class SimStoreZipStorage:
 
             yield paths.SampleSet(samples)
 
+    def save_initial_conditions(self, scheme, initial_conditions,
+                                mccycle=0, simulation=None):
+        for sample in initial_conditions:
+            self.save_sample(sample)
+
+        with self.get_permanent_storage() as storage:
+            change = paths.AcceptedSampleMoveChange(
+                initial_conditions.samples
+            )
+            step0 = paths.MCStep(
+                simulation=simulation,
+                mccycle=mccycle,
+                previous=None,
+                active=initial_conditions,
+                change=change,
+            )
+            storage.save(scheme)
+            storage.save(step0)
+
     def save_change(self, taskid, change):
         with self._get_storage(f"changes/{taskid}.zip", mode='w') as storage:
             storage.tags['result'] = change
@@ -133,13 +152,16 @@ class SimStoreZipStorage:
             tmpdir = pathlib.Path(tmpdir)
             local_results = tmpdir / "results.db"
             results_db = "results/results.db"
-            self.storage_handler.load(results_db, local_results)
-            storage = Storage(local_results)
+            if results_db in self.storage_handler:
+                self.storage_handler.load(results_db, local_results)
+                storage = Storage(local_results)
+            else:
+                storage = Storage(local_results, mode='w')
             try:
                 yield storage
             finally:
                 storage.sync_all()
-                self.storage_handler.save(results_db, local_results)
+                self.storage_handler.store(results_db, local_results)
 
 
     def save_step(self, taskid, mccycle):
@@ -151,8 +173,12 @@ class SimStoreZipStorage:
                 last_step = storage.steps[-1]
                 last_active = last_step.active
                 assert last_step.mccycle == mccycle - 1
+                simulation = last_step.simulation  # kind of assumption here
+                prev_active = last_step.active
+                samples = change.results
+                active = last_active.apply_samples(samples)
                 step = paths.MCStep(
-                    simulation="fill_this_im",
+                    simulation=simulation,
                     mccycle=mccycle,
                     previous=None,  # not used by SimStore
                     active=active,
@@ -180,8 +206,8 @@ def run_task_batch(task, objectdb):
 
 def run_storage_task(task, objectdb):
     print(f"Running task: {task}")
-    return
-    raise RuntimeError()
+    for taskid, mccycle in task.mover_tasks.items():
+        objectdb.save_step(taskid, mccycle)
 
 TASK_DISPATCH = {
     "TaskBatch": run_task_batch,

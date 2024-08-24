@@ -6,8 +6,9 @@ from exapaths.move_to_ops.preplanned import (
 import logging
 _logger = logging.getLogger(__name__)
 def create_batched_dag(scheme, nsteps, *, max_expensive_tasks=1,
-                       store_every=1):
-    dag = edges_to_dag(preplan_pathsampling(scheme, nsteps))
+                       store_every=1, simulation=None):
+    dag = edges_to_dag(preplan_pathsampling(scheme, nsteps,
+                                            simulation=simulation))
     _logger.info(f"Move DAG: {dag}")
     move_grouper = OPSTaskGrouper(max_expensive=max_expensive_tasks)
     move_batched = move_grouper.rebatch(dag)

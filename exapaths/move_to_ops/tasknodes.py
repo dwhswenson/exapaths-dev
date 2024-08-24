@@ -89,15 +89,17 @@ class MoverNode(TaskNode):
     uses of the same mover. It also provides better string representation.
     """
     TYPE = "MoverTask"
-    def __init__(self, mover, number):
+    def __init__(self, mover, number, simulation=None):
         super().__init__()
         self.number = number
         self.mover = mover
+        self.simulation = simulation
 
     def _to_dict(self):
         return {
             'mover': self.mover,
             'number': self.number,
+            'simulation': self.simulation
         }
 
     def __repr__(self):

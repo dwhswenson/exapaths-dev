@@ -97,5 +97,3 @@ if __name__ == "__main__":
 
     init_conds = scheme.initial_conditions_from_trajectories(init_conds)
     objectdb.save_initial_conditions(scheme, init_conds, simulation=sim)
-    for sample in init_conds:
-        objectdb.save_sample(sample)

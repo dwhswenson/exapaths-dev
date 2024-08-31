@@ -69,8 +69,10 @@ def slurm():
 @SCHEME.clicked()
 @INIT_CONDS.clicked()
 @N_STEPS_MC
+@click.option("--store-every", default=1)
 @click.option("--template", required=True)
-def submit(input_file, output_file, scheme, init_conds, nsteps, template):
+def submit(input_file, output_file, scheme, init_conds, nsteps, store_every,
+           template):
     import openpathsampling as paths
     _logger.info(f"Loading objects from {input_file}....")
     storage = INPUT_FILE.get(input_file)
@@ -82,7 +84,8 @@ def submit(input_file, output_file, scheme, init_conds, nsteps, template):
     storage_handler = LocalFileStorageHandler(working)
     objectdb = SimStoreZipStorage(storage_handler)
     _logger.info(f"Preplanning the path sampling simulation....")
-    task_graph = create_task_graph(scheme, nsteps, objectdb)
+    task_graph = create_task_graph(scheme, nsteps, objectdb,
+                                   store_every=store_every)
     orchestrator = SLURMOrchestrator(template, jobs_dir=working / "jobs",
                                      working_dir=working)
 

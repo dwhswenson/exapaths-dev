@@ -8,6 +8,7 @@ from exapaths.create_task_graph import create_task_graph
 from exapaths.run_task import SimStoreZipStorage, TASK_DISPATCH
 from exapaths.move_to_ops.storage_handlers import LocalFileStorageHandler
 from exapaths.worker import MoverTask
+from exapaths.simulation import ExapathsSimulation
 
 from paths_cli.parameters import (
     INPUT_FILE, SCHEME, INIT_CONDS, OUTPUT_FILE, N_STEPS_MC,
@@ -77,7 +78,7 @@ def submit(input_file, output_file, scheme, init_conds, nsteps, store_every,
     _logger.info(f"Loading objects from {input_file}....")
     storage = INPUT_FILE.get(input_file)
     scheme = SCHEME.get(storage, scheme)
-    init_conds = INIT_CONDS.get(storage, init_conds)[0]
+    init_conds = INIT_CONDS.get(storage, init_conds)
 
     base_dir = pathlib.Path(output_file).parent
     working = base_dir / "working"
@@ -89,13 +90,11 @@ def submit(input_file, output_file, scheme, init_conds, nsteps, store_every,
     orchestrator = SLURMOrchestrator(template, jobs_dir=working / "jobs",
                                      working_dir=working)
 
-    if isinstance(init_conds, paths.SampleSet):
-        init_conds = [s.trajectory for s in init_conds]
-
     init_conds = scheme.initial_conditions_from_trajectories(init_conds)
     _logger.info("Storing the initial conditions....")
-    for sample in init_conds:
-        objectdb.save_sample(sample)
+    sim = ExapathsSimulation()
+    objectdb.save_initial_conditions(scheme, init_conds, mccycle=0,
+                                     simulation=sim)
     _logger.info("Submitting the jobs to SLURM")
     orchestrator.submit_graph(task_graph)
 

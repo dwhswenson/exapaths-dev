@@ -137,6 +137,8 @@ class SimStoreZipStorage:
         ensemble = sample.ensemble
         path = f"current/{ensemble.__uuid__}.zip"
         with self._get_storage(path, mode='w') as storage:
+            print(f"Saving to {path}: {sample.ensemble.name} {sample.replica} "
+                  f"{sample.trajectory}")
             storage.tags['sample'] = sample
 
     def update_active_samples(self, taskid):
